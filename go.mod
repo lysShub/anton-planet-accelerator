@@ -1,4 +1,4 @@
-module core
+module anton
 
 go 1.19
 

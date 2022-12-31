@@ -1,7 +1,7 @@
 package main
 
 import (
-	"core/divert"
+	"anton/core/divert"
 	"fmt"
 
 	"github.com/shirou/gopsutil/process"
