@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	DLLPath = `D:\OneDrive\code\go\安东星加速器\core\WinDivert.dll`
+	DLLPath = `D:\OneDrive\code\go\安东星加速器\client\divert\WinDivert.dll`
 )
 
 // TODO: sync.Once on Open
@@ -124,11 +124,27 @@ type DATA_FLOW struct {
 }
 
 func (d *DATA_FLOW) LocalAddr() netip.Addr {
-	return netip.AddrFrom16(*(*[16]byte)(unsafe.Pointer(&d.localAddr)))
+	if d.localAddr[1] == 0xffff {
+		_t := *(*[4]byte)(unsafe.Pointer(&d.localAddr[0]))
+
+		// TODO: don't know why, but it's reversed
+		_t[0], _t[1], _t[2], _t[3] = _t[3], _t[2], _t[1], _t[0]
+		return netip.AddrFrom4(_t)
+	} else {
+		return netip.AddrFrom16(*(*[16]byte)(unsafe.Pointer(&d.localAddr)))
+	}
 }
 
 func (d *DATA_FLOW) RemoteAddr() netip.Addr {
-	return netip.AddrFrom16(*(*[16]byte)(unsafe.Pointer(&d.remoteAddr)))
+	if d.localAddr[1] == 0xffff {
+		_t := *(*[4]byte)(unsafe.Pointer(&d.remoteAddr[0]))
+
+		// TODO: don't know why, but it's reversed
+		_t[0], _t[1], _t[2], _t[3] = _t[3], _t[2], _t[1], _t[0]
+		return netip.AddrFrom4(_t)
+	} else {
+		return netip.AddrFrom16(*(*[16]byte)(unsafe.Pointer(&d.remoteAddr)))
+	}
 }
 
 type DATA_SOCKET = DATA_FLOW
@@ -159,14 +175,20 @@ func Open(filter string, layer LAYER, priority int16, flags Flag) (Handle, error
 
 func (h Handle) Recv(packet []byte) (int, ADDRESS, error) {
 	var recvLen uint32
+	var recvLenPtr unsafe.Pointer = unsafe.Pointer(&recvLen)
 	var addr ADDRESS
 
 	sp := (*reflect.SliceHeader)(unsafe.Pointer(&packet))
+	if sp.Len == 0 {
+		sp.Data = 0
+		recvLenPtr = nil
+	}
+
 	r1, _, err := winDivertRecvProc.Call(
 		uintptr(h),
 		sp.Data,
 		uintptr(sp.Len),
-		uintptr(unsafe.Pointer(&recvLen)),
+		uintptr(recvLenPtr),
 		uintptr(unsafe.Pointer(&addr)),
 	)
 	if r1 == 0 {
