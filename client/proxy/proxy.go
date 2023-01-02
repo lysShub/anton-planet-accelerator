@@ -13,7 +13,7 @@ import (
 		代理启动时，监听进程的socket事件, 便且获取进程已经创建udp conn table。socket事件需要一直监听，监听到
 	对应的事件后要更新代理。获取udp conn table只在代理启动时进行，会将所有的udp conn都加入代理。
 
-		我们通过laddr确定一个udp conn, 因为udp是无连接的, 所以不能对raddr有要求。代理同样，raddr是可选项。
+		我们通过laddr确定一个udp conn。
 */
 
 type Proxy struct {
@@ -70,16 +70,11 @@ func (p *Proxy) listenSocketEvent(ctx ctx.Ctx) {
 			if addr.Header.Event == divert.EVENT_SOCKET_BIND {
 				s := addr.Socket()
 				laddr := netip.AddrPortFrom(s.LocalAddr(), s.LocalPort)
-				raddr := netip.AddrPortFrom(s.RemoteAddr(), s.RemotePort)
-				if err = p.addProxyFilterConnected(laddr, raddr); err != nil {
-					ctx.Exception(err)
-					return
-				}
+				p.addProxyFilter(ctx, laddr)
 			} else {
 				s := addr.Socket()
 				laddr := netip.AddrPortFrom(s.LocalAddr(), s.LocalPort)
-				raddr := netip.AddrPortFrom(s.RemoteAddr(), s.RemotePort)
-				p.deleteProxyFilter(laddr, raddr)
+				p.deleteProxyFilter(laddr)
 			}
 		}
 	}(p.pid)
@@ -106,10 +101,7 @@ func (p *Proxy) listenSocketEvent(ctx ctx.Ctx) {
 
 			s := addr.Socket()
 			laddr := netip.AddrPortFrom(s.LocalAddr(), s.LocalPort)
-			if err = p.addProxyFilter(laddr); err != nil {
-				ctx.Exception(err)
-				return
-			}
+			p.addProxyFilter(ctx, laddr)
 		}
 	}(p.pid)
 
@@ -131,34 +123,118 @@ func (p *Proxy) listenSocketEvent(ctx ctx.Ctx) {
 type Sniff struct {
 	m *sync.RWMutex
 
-	s map[int]*sniffer
+	ch ch
+
+	s map[*sniffer]struct{}
+}
+
+func NewSniff() *Sniff {
+	return &Sniff{
+		m: &sync.RWMutex{},
+		s: make(map[*sniffer]struct{}),
+	}
 }
 
 type sniffer struct {
-	connected    bool
-	laddr, raddr netip.AddrPort
+	laddr netip.AddrPort
+	h     divert.Handle
+
+	ch ch
 }
 
-func (s *Sniff) addProxyFilterConnected(laddr, raddr netip.AddrPort) error {
-	fmt.Println("add proxy:", laddr, raddr)
-	return nil
+func newSniffer(laddr netip.AddrPort, ch ch, ctx ctx.Ctx) *sniffer {
+	return &sniffer{
+		laddr: laddr,
+		ch:    ch,
+	}
 }
 
-func (s *Sniff) addProxyFilter(laddr netip.AddrPort) error {
-	fmt.Println("add proxy:", laddr)
-	return nil
+func (s *sniffer) do(ctx ctx.Ctx) {
+	var f = fmt.Sprintf("udp and localAddr=%s and localPort=%d", s.laddr.Addr(), s.laddr.Port())
+	// TODO: pass close/shutdown
+	var err error
+
+	s.h, err = divert.Open(f, divert.LAYER_NETWORK, 1, divert.FLAG_SNIFF|divert.FLAG_RECV_ONLY)
+	if err != nil {
+		ctx.Exception(err)
+		return
+	}
+	defer s.h.Close()
+
+	var n int
+	var addr divert.ADDRESS
+	var u = &upack{
+		data: make([]byte, 65535),
+	}
+	for {
+		n, addr, err = s.h.Recv(u.data)
+		if err != nil {
+			ctx.Exception(err)
+			return
+		}
+
+		// TODO: parse ip header
+		u.data = u.data[:n]
+		s.ch.push(u)
+		if false {
+			fmt.Println(addr)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+	}
 }
 
-func (s *Sniff) deleteProxyFilter(laddr, raddr netip.AddrPort) error {
-	return nil
+func (s *sniffer) shutdown() {
+	s.h.Shutdown(divert.SHUTDOWN_RECV)
 }
 
-func (s *Sniff) Read(p []byte) (n int, err error) {
-
-	return
+func (s *sniffer) close() error {
+	return s.h.Close()
 }
 
-func (s *Sniff) Write(p []byte) (n int, err error) {
+func (s *Sniff) addProxyFilter(ctx ctx.Ctx, laddr netip.AddrPort) {
+	if s.hasFilter(laddr) {
+		return
+	}
 
-	return
+	sr := newSniffer(laddr, s.ch, ctx)
+	s.m.Lock()
+	s.s[sr] = struct{}{}
+	s.m.Unlock()
+
+	go sr.do(ctx)
+}
+
+func (s *Sniff) hasFilter(laddr netip.AddrPort) bool {
+	s.m.RLock()
+	defer s.m.RUnlock()
+
+	for sr := range s.s {
+		if sr.laddr == laddr {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s *Sniff) deleteProxyFilter(laddr netip.AddrPort) {
+	s.m.Lock()
+	defer s.m.Unlock()
+
+	for sr := range s.s {
+		if sr.laddr == laddr {
+			sr.shutdown()
+			delete(s.s, sr)
+			return
+		}
+	}
+}
+
+func (s *Sniff) Read(u *upack) {
+	s.ch.pope(u)
 }
