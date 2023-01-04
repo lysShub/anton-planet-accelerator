@@ -39,7 +39,7 @@ const (
 	LAYER_REFLECT                      // Reflect layer.
 )
 
-type ADDRESS struct {
+type Address struct {
 	Timestamp int64
 	Header    struct {
 		Layer uint8 // Packet's layer.
@@ -66,44 +66,49 @@ type ADDRESS struct {
 	reserved3 [64]byte
 }
 
-func (a *ADDRESS) Sniffed() bool {
+func (a *Address) Sniffed() bool {
 	return a.Header.Flags&0x01 != 0
 }
 
-func (a *ADDRESS) Outbound() bool {
+func (a *Address) Outbound() bool {
 	return a.Header.Flags&0x02 != 0
 }
 
-func (a *ADDRESS) Loopback() bool {
+func (a *Address) Loopback() bool {
 	return a.Header.Flags&0x04 != 0
 }
 
-func (a *ADDRESS) Impostor() bool {
+func (a *Address) Impostor() bool {
 	return a.Header.Flags&0x08 != 0
 }
 
-func (a *ADDRESS) IPv6() bool {
+func (a *Address) IPv6() bool {
 	return a.Header.Flags&0x10 != 0
 }
 
-func (a *ADDRESS) IPChecksum() bool {
+func (a *Address) IPChecksum() bool {
 	return a.Header.Flags&0x20 != 0
 }
 
-func (a *ADDRESS) TCPChecksum() bool {
+func (a *Address) TCPChecksum() bool {
 	return a.Header.Flags&0x40 != 0
 }
 
-func (a *ADDRESS) Network() *DATA_NETWORK {
+func (a *Address) Network() *DATA_NETWORK {
 	return (*DATA_NETWORK)(unsafe.Pointer(&a.reserved3[0]))
 }
-func (a *ADDRESS) Flow() *DATA_FLOW {
+
+func (a *Address) Clean() {
+	a.reserved3 = [64]byte{}
+}
+
+func (a *Address) Flow() *DATA_FLOW {
 	return (*DATA_FLOW)(unsafe.Pointer(&a.reserved3[0]))
 }
-func (a *ADDRESS) Socket() *DATA_SOCKET {
+func (a *Address) Socket() *DATA_SOCKET {
 	return (*DATA_SOCKET)(unsafe.Pointer(&a.reserved3[0]))
 }
-func (a *ADDRESS) Reflect() *DATA_REFLECT {
+func (a *Address) Reflect() *DATA_REFLECT {
 	return (*DATA_REFLECT)(unsafe.Pointer(&a.reserved3[0]))
 }
 
@@ -173,10 +178,10 @@ func Open(filter string, layer LAYER, priority int16, flags Flag) (Handle, error
 	return h, nil
 }
 
-func (h Handle) Recv(packet []byte) (int, ADDRESS, error) {
+func (h Handle) Recv(packet []byte) (int, Address, error) {
 	var recvLen uint32
 	var recvLenPtr unsafe.Pointer = unsafe.Pointer(&recvLen)
-	var addr ADDRESS
+	var addr Address
 
 	sp := (*reflect.SliceHeader)(unsafe.Pointer(&packet))
 	if sp.Len == 0 {
@@ -203,10 +208,10 @@ type LPOVERLAPPED *OVERLAPPED
 func (h Handle) RecvEx(
 	packet []byte, flag uint64,
 	lpOverlapped LPOVERLAPPED,
-) (int, ADDRESS, error) {
+) (int, Address, error) {
 
 	var recvLen uint32
-	var addr ADDRESS
+	var addr Address
 	sp := (*reflect.SliceHeader)(unsafe.Pointer(&packet))
 	r1, _, err := winDivertRecvExProc.Call(
 		uintptr(h),
@@ -226,7 +231,7 @@ func (h Handle) RecvEx(
 
 func (h Handle) Send(
 	packet []byte,
-	pAddr *ADDRESS,
+	pAddr *Address,
 ) (int, error) {
 
 	var pSendLen uint32
@@ -247,7 +252,7 @@ func (h Handle) Send(
 
 func (h Handle) SendEx(
 	packet []byte, flag uint64,
-	pAddr *ADDRESS,
+	pAddr *Address,
 ) (int, LPOVERLAPPED, error) {
 
 	var pSendLen uint32

@@ -287,8 +287,8 @@ func WinDivertHelperFormatIPv6Address(addr uint32) (string, error) {
 	return syscall.UTF16ToString(buf[:]), nil
 }
 
-func WinDivertHelperCalcChecksums(packet []byte, flags uint64) (*ADDRESS, error) {
-	var addr ADDRESS
+func WinDivertHelperCalcChecksums(packet []byte, flags uint64) (*Address, error) {
+	var addr Address
 	r1, _, err := winDivertHelperCalcChecksumsProc.Call(
 		uintptr(unsafe.Pointer(&packet[0])),
 		uintptr(len(packet)),
@@ -334,7 +334,7 @@ func WinDivertHelperCompileFilter(filter string, layer LAYER) (string, error) {
 	return string(buf[:]), nil
 }
 
-func WinDivertHelperEvalFilter(filter string, packet []byte, addr *ADDRESS) (bool, error) {
+func WinDivertHelperEvalFilter(filter string, packet []byte, addr *Address) (bool, error) {
 	pFilter, err := syscall.BytePtrFromString(filter)
 	if err != nil {
 		return false, err

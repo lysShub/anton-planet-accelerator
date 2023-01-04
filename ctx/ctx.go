@@ -10,9 +10,6 @@ type Ctx interface {
 	Exception(err error)
 }
 
-// 常规的Ctx的作用是, 在Ctx树中、父Ctx节点通过上下文控制子Ctx节点。
-// 此Ctx相对常规, 增加了子Ctx异常抛出功能, 父Ctx接收到抛出的异常后, 主动结束任务。
-
 // exceptCtx is a context that can throw the exception.
 type exceptCtx struct {
 	context.Context

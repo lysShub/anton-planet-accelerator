@@ -13,7 +13,9 @@ import (
 		代理启动时，监听进程的socket事件, 便且获取进程已经创建udp conn table。socket事件需要一直监听，监听到
 	对应的事件后要更新代理。获取udp conn table只在代理启动时进行，会将所有的udp conn都加入代理。
 
-		我们通过laddr确定一个udp conn。
+		我们通过laddr确定一个udp-conn。
+
+		TODO: 一个代理udp-conn对应一个fudp-conn虚拟连接
 */
 
 type Proxy struct {
@@ -59,7 +61,7 @@ func (p *Proxy) listenSocketEvent(ctx ctx.Ctx) {
 		}
 
 		var b = []byte{}
-		var addr divert.ADDRESS
+		var addr divert.Address
 		for {
 			_, addr, err = hs[0].Recv(b)
 			if err != nil {
@@ -91,7 +93,7 @@ func (p *Proxy) listenSocketEvent(ctx ctx.Ctx) {
 		}
 
 		var b = []byte{}
-		var addr divert.ADDRESS
+		var addr divert.Address
 		for {
 			_, addr, err = hs[1].Recv(b)
 			if err != nil {
@@ -150,7 +152,7 @@ func newSniffer(laddr netip.AddrPort, ch ch, ctx ctx.Ctx) *sniffer {
 }
 
 func (s *sniffer) do(ctx ctx.Ctx) {
-	var f = fmt.Sprintf("udp and localAddr=%s and localPort=%d", s.laddr.Addr(), s.laddr.Port())
+	var f = fmt.Sprintf("udp and outbound and localAddr=%s and localPort=%d", s.laddr.Addr(), s.laddr.Port())
 	// TODO: pass close/shutdown
 	var err error
 
@@ -162,7 +164,7 @@ func (s *sniffer) do(ctx ctx.Ctx) {
 	defer s.h.Close()
 
 	var n int
-	var addr divert.ADDRESS
+	var addr divert.Address
 	var u = &upack{
 		data: make([]byte, 65535),
 	}
