@@ -1,68 +1,26 @@
-package ctx
+package ctx_test
 
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/require"
+	"warthunder/ctx"
 )
 
-func Test_Origin(t *testing.T) {
+func Test_Ctx(t *testing.T) {
 
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(time.Second + time.Millisecond)
-		cancel()
-	}()
-	ctx = WithException(ctx)
-	start := time.Now()
+	c := ctx.WithFatal(context.Background())
+	go subFunc(c)
 
-	// sub function
-	var wg = &sync.WaitGroup{}
-	wg.Add(2)
-	go func() {
-		<-ctx.Done()
-		require.True(t, time.Since(start) > time.Second)
-		wg.Done()
-	}()
-	go func() {
-		<-ctx.Done()
-		require.True(t, time.Since(start) > time.Second)
-		wg.Done()
-	}()
-	wg.Wait()
+	<-c.Done()
+
+	t.Log(c.Err())
+
 }
 
-func Test_New(t *testing.T) {
-
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(time.Second * 2)
-		cancel()
-	}()
-	ctx = WithException(ctx)
-	start := time.Now()
-
-	// sub function
-	var wg = &sync.WaitGroup{}
-	wg.Add(3)
-	go func() {
-		time.Sleep(time.Second + time.Millisecond)
-		ctx.(Ctx).Exception(errors.New("sub function has error"))
-		wg.Done()
-	}()
-	go func() {
-		<-ctx.Done()
-		require.True(t, time.Since(start) > time.Second)
-		wg.Done()
-	}()
-	go func() {
-		<-ctx.Done()
-		require.True(t, time.Since(start) > time.Second)
-		wg.Done()
-	}()
-	wg.Wait()
+func subFunc(c ctx.Ctx) {
+	context.WithTimeout(c, time.Second*2)
+	time.Sleep(time.Second * 3)
+	c.Fatal(errors.New("致命错误"))
 }

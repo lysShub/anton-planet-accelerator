@@ -1,23 +1,26 @@
 package proxy
 
-import "testing"
+import (
+	"testing"
+	"warthunder/fudp"
+)
 
 func Test_Ch(t *testing.T) {
 
 	var ch = newCh(1)
 
 	go func() {
-		var u = &upack{data: make([]byte, 65536)}
+		var u = fudp.NewUpack()
 		for i := 0; i < 5; i++ {
-			u.data[0] = byte(i)
+			u.Data = append(u.Data, byte(i))
 			ch.push(u)
 		}
 	}()
 
-	var u = &upack{data: make([]byte, 65536)}
+	var u = fudp.NewUpack()
 	for i := 0; i < 5; i++ {
 		ch.pope(u)
-		if u.data[0] != byte(i) {
+		if u.Data[0] != byte(i) {
 			t.Fatal()
 		}
 	}

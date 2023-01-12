@@ -1,4 +1,4 @@
-module anton
+module warthunder
 
 go 1.19
 

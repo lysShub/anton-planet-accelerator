@@ -1,242 +1,227 @@
 package proxy
 
 import (
-	"anton/client/divert"
-	"anton/ctx"
+	"context"
 	"fmt"
 	"net/netip"
 	"sync"
+	"warthunder/client/divert"
+	"warthunder/ctx"
+	"warthunder/util"
 )
 
-/*
-	处理逻辑:
-		代理启动时，监听进程的socket事件, 便且获取进程已经创建udp conn table。socket事件需要一直监听，监听到
-	对应的事件后要更新代理。获取udp conn table只在代理启动时进行，会将所有的udp conn都加入代理。
+type Upack struct {
+	sockIdx uint16 // 单增, 五元组确定一个sock
 
-		我们通过laddr确定一个udp-conn。
+	proto uint8
+	lPort uint16
+	lAddr [16]uint8
+	rPort uint16
+	rAddr [16]uint8
 
-		TODO: 一个代理udp-conn对应一个fudp-conn虚拟连接
-*/
+	data []byte
+}
 
+type sock struct {
+	proto        divert.Proto
+	laddr, raddr netip.AddrPort
+}
+
+// 代理一个process的传输层数据
 type Proxy struct {
-	Sniff
-	pid int // WarThunder process ID
+	// 原理:
+	// NewPorxy 时,
+	// 1. 先根据pid, 找到程序已经建立的socket table, 而这个table只有laddr, 所以把它
+	// 加入到Network 阻塞代理中, 并且等待其发送数据时, 就可以获取到raddr了
+	// 2. 监听所有Flow with pid事件
+	//
+	// 对于1任务, 如果是unconnected socket, 需要终身捕获。而且需要把读取到的数据包导入正确的数据流中
+
+	pid          int
+	parentFilter string
+	proxyConn    Io
+
+	sockArr []bool
+
+	// 接收表, 用于代理在作用之前, proces已经建立的连接
+	// sock's raddr is null
+	// udp unconnected socket 需要终身捕获
+	acceptTable map[sock]context.CancelFunc
+
+	// 代理table
+	proxyTable map[sock]context.CancelFunc
 
 	m *sync.RWMutex
 }
 
-// NewProxy creates a new proxy, blocked until process is started.
-func NewProxy(ctx ctx.Ctx) (*Proxy, error) {
-	// pid, err := util.GetWarThunderPid(ctx)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	//
-	pid := 6060
+func NewProxy(c context.Context, pid int, filter string, proxyConn Io) *Proxy {
+	c1 := ctx.WithFatal(c)
 
 	p := &Proxy{
-		pid: pid,
-		m:   &sync.RWMutex{},
+		pid:          pid,
+		parentFilter: filter,
+		proxyConn:    proxyConn,
 	}
-
-	go p.listenSocketEvent(ctx)
-
-	return &Proxy{}, nil
-}
-
-// listenSocketEvent listens the process's socket BIND/LISTEN event.
-func (p *Proxy) listenSocketEvent(ctx ctx.Ctx) {
-	var hs [2]divert.Handle
-
-	// listen BIND/CLOSE event
-	go func(pid int) {
-		var f = fmt.Sprintf("udp and (event=BIND or event=CLOSE) and processId=%d", pid)
-
-		var err error
-		hs[0], err = divert.Open(f, divert.LAYER_SOCKET, 123, divert.FLAG_SNIFF|divert.FLAG_READ_ONLY)
-		if err != nil {
-			ctx.Exception(err)
-			return
-		}
-
-		var b = []byte{}
-		var addr divert.Address
-		for {
-			_, addr, err = hs[0].Recv(b)
-			if err != nil {
-				ctx.Exception(err)
-				return
-			}
-
-			if addr.Header.Event == divert.EVENT_SOCKET_BIND {
-				s := addr.Socket()
-				laddr := netip.AddrPortFrom(s.LocalAddr(), s.LocalPort)
-				p.addProxyFilter(ctx, laddr)
-			} else {
-				s := addr.Socket()
-				laddr := netip.AddrPortFrom(s.LocalAddr(), s.LocalPort)
-				p.deleteProxyFilter(laddr)
-			}
-		}
-	}(p.pid)
-
-	// listen LISTEN event
-	go func(pid int) {
-		var f = fmt.Sprintf("udp and event=LISTEN and processId=%d", pid)
-
-		var err error
-		hs[1], err = divert.Open(f, divert.LAYER_SOCKET, 122, divert.FLAG_SNIFF|divert.FLAG_READ_ONLY)
-		if err != nil {
-			ctx.Exception(err)
-			return
-		}
-
-		var b = []byte{}
-		var addr divert.Address
-		for {
-			_, addr, err = hs[1].Recv(b)
-			if err != nil {
-				ctx.Exception(err)
-				return
-			}
-
-			s := addr.Socket()
-			laddr := netip.AddrPortFrom(s.LocalAddr(), s.LocalPort)
-			p.addProxyFilter(ctx, laddr)
-		}
-	}(p.pid)
-
 	go func() {
-		select {
-		case <-ctx.Done():
-			if err := hs[0].Shutdown(divert.SHUTDOWN_RECV); err != nil {
-				ctx.Exception(err)
-			}
-			if err := hs[1].Shutdown(divert.SHUTDOWN_RECV); err != nil {
-				ctx.Exception(err)
-			}
-			return
-		default:
-		}
+		<-c.Done()
+
 	}()
-}
 
-type Sniff struct {
-	m *sync.RWMutex
-
-	ch ch
-
-	s map[*sniffer]struct{}
-}
-
-func NewSniff() *Sniff {
-	return &Sniff{
-		m: &sync.RWMutex{},
-		s: make(map[*sniffer]struct{}),
-	}
-}
-
-type sniffer struct {
-	laddr netip.AddrPort
-	h     divert.Handle
-
-	ch ch
-}
-
-func newSniffer(laddr netip.AddrPort, ch ch, ctx ctx.Ctx) *sniffer {
-	return &sniffer{
-		laddr: laddr,
-		ch:    ch,
-	}
-}
-
-func (s *sniffer) do(ctx ctx.Ctx) {
-	var f = fmt.Sprintf("udp and outbound and localAddr=%s and localPort=%d", s.laddr.Addr(), s.laddr.Port())
-	// TODO: pass close/shutdown
-	var err error
-
-	s.h, err = divert.Open(f, divert.LAYER_NETWORK, 1, divert.FLAG_SNIFF|divert.FLAG_RECV_ONLY)
+	//
+	uts, err := util.GetUDPTableByPid(pid)
 	if err != nil {
-		ctx.Exception(err)
+		panic(err)
+	}
+	for _, ut := range uts {
+		p.accept(c1, sock{
+			proto: divert.IPPROTO_UDP,
+			laddr: netip.AddrPortFrom(ut.LocalAddr(), ut.LocalPort()),
+		}, ut.Connected())
+	}
+
+	return p
+}
+
+// func (p *Proxy) acceptUDP(ctx ctx.Ctx, laddr netip.AddrPort, connected bool) {
+// 	has := false
+// 	p.m.Lock()
+// 	if _, has = p.acceptTable[laddr]; !has {
+// 		p.acceptTable[laddr] = struct{}{}
+// 	}
+// 	p.m.Unlock()
+
+// 	if !has {
+// 		go p.accept(ctx, laddr, divert.IPPROTO_UDP, connected)
+// 	}
+// }
+
+// func (p *Proxy) acceptTCP(ctx ctx.Ctx, laddr netip.AddrPort) {
+// 	has := false
+// 	p.m.Lock()
+// 	if _, has = p.acceptTable[laddr]; !has {
+// 		p.acceptTable[laddr] = struct{}{}
+// 	}
+// 	p.m.Unlock()
+
+// 	if !has {
+// 		go p.accept(ctx, laddr, tcp, true)
+// 	}
+// }
+
+func (p *Proxy) accept(c ctx.Ctx, s sock, connected bool) {
+	var cancel context.CancelFunc
+	switch s.proto {
+	case divert.IPPROTO_UDP:
+		if !connected {
+			// TODO: 尝试ctx.WithTimeout只返回cancel, 这样使用者就可以不用引入官方context包
+			_, cancel = context.WithCancel(c)
+		}
+	case divert.IPPROTO_TCP:
+	default:
+		panic("not support prto " + s.proto.String())
+	}
+
+	p.acceptTable[s] = cancel
+
+	defer func() {
+		p.m.Lock()
+		delete(p.acceptTable, s)
+		p.m.Unlock()
+	}()
+
+	var f = fmt.Sprintf("%s.SrcPort = %d and outbound", s.proto, s.laddr.Port())
+	// TODO: 比proxy更高优先级
+	h, err := divert.Open(f, divert.LAYER_NETWORK, 111, divert.FLAG_READ_ONLY)
+	if err != nil {
+		c.Fatal(err)
 		return
 	}
-	defer s.h.Close()
+	defer h.Close()
 
+	var d = make([]byte, 65535)
+	var u = &Upack{data: make([]byte, 65535)}
 	var n int
 	var addr divert.Address
-	var u = &upack{
-		data: make([]byte, 65535),
-	}
 	for {
-		n, addr, err = s.h.Recv(u.data)
-		if err != nil {
-			ctx.Exception(err)
+		if n, addr, err = h.Recv(d); err != nil {
+			c.Fatal(err)
 			return
-		}
+		} else {
+			a := addr.Network()
+			if false {
+				fmt.Println(a, n)
+			}
 
-		// TODO: parse ip header
-		u.data = u.data[:n]
-		s.ch.push(u)
-		if false {
-			fmt.Println(addr)
+			// TODO: parse packet
+			var raddr netip.AddrPort
+			p.addProxy(sock{proto: s.proto, laddr: s.laddr, raddr: raddr})
+
+			if err = p.proxyConn.Write(u); err != nil {
+				c.Fatal(err)
+				return
+			}
 		}
 
 		select {
-		case <-ctx.Done():
+		case <-c.Done():
 			return
 		default:
+			if connected {
+				break
+			}
 		}
 	}
 }
 
-func (s *sniffer) shutdown() {
-	s.h.Shutdown(divert.SHUTDOWN_RECV)
-}
-
-func (s *sniffer) close() error {
-	return s.h.Close()
-}
-
-func (s *Sniff) addProxyFilter(ctx ctx.Ctx, laddr netip.AddrPort) {
-	if s.hasFilter(laddr) {
-		return
+func (p *Proxy) addProxy(s sock) {
+	switch s.proto {
+	case divert.IPPROTO_UDP, divert.IPPROTO_TCP:
+	default:
+		panic("not support proto " + s.proto.String())
 	}
 
-	sr := newSniffer(laddr, s.ch, ctx)
-	s.m.Lock()
-	s.s[sr] = struct{}{}
-	s.m.Unlock()
+	sockIdx := p.getSockIdx()
+	var f = fmt.Sprintf("%s.SrcPort=%d and %s.DstPort=%d and outbound", s.proto, s.laddr.Port(), s.proto, s.raddr.Port())
 
-	go sr.do(ctx)
+	divert.Open(f, divert.LAYER_NETWORK, 11, divert.FLAG_READ_ONLY)
+	fmt.Println(sockIdx)
 }
 
-func (s *Sniff) hasFilter(laddr netip.AddrPort) bool {
-	s.m.RLock()
-	defer s.m.RUnlock()
+func (p *Proxy) remProxy(laddr, raddr netip.AddrPort) {}
 
-	for sr := range s.s {
-		if sr.laddr == laddr {
-			return true
+func (p *Proxy) getSockIdx() uint16 {
+	p.m.Lock()
+	defer p.m.Unlock()
+
+	if len(p.sockArr) < 65536 {
+		p.sockArr = append(p.sockArr, true)
+		return uint16(len(p.sockArr)) - 1
+	} else {
+		for i, v := range p.sockArr {
+			if !v {
+				p.sockArr[i] = true
+				return uint16(i)
+			}
 		}
 	}
 
-	return false
+	panic("too many sockets")
 }
 
-func (s *Sniff) deleteProxyFilter(laddr netip.AddrPort) {
-	s.m.Lock()
-	defer s.m.Unlock()
+func (p *Proxy) putSockIdx(idx uint16) {
+	p.m.Lock()
+	defer p.m.Unlock()
 
-	for sr := range s.s {
-		if sr.laddr == laddr {
-			sr.shutdown()
-			delete(s.s, sr)
-			return
-		}
+	if idx < uint16(len(p.sockArr)) {
+		p.sockArr[idx] = false
 	}
 }
 
-func (s *Sniff) Read(u *upack) {
-	s.ch.pope(u)
+func (p *Proxy) Read(b *Upack) error {
+
+	return nil
+}
+
+func (p *Proxy) Write(b *Upack) error {
+	return nil
 }

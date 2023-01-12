@@ -57,8 +57,8 @@ func (r *MIB_UDPROW_OWNER_MODULE) LocalAddr() netip.Addr {
 	return netip.AddrFrom4(*(*[4]byte)(unsafe.Pointer(&r.dwLocalAddr)))
 }
 
-func (r *MIB_UDPROW_OWNER_MODULE) LocalPort() int {
-	return int(r.dwLocalPort)
+func (r *MIB_UDPROW_OWNER_MODULE) LocalPort() uint16 {
+	return uint16(r.dwLocalPort)
 }
 
 func (r *MIB_UDPROW_OWNER_MODULE) OwningPid() int {
@@ -164,4 +164,5 @@ func GetUDPTableByPid(pid int) ([]MIB_UDPROW_OWNER_MODULE, error) {
 		}
 	}
 	return rows, nil
+
 }

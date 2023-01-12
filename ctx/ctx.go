@@ -7,41 +7,43 @@ import (
 
 type Ctx interface {
 	context.Context
-	Exception(err error)
+	Fatal(err error)
 }
 
-// exceptCtx is a context that can throw the exception.
-type exceptCtx struct {
+// fatalCtx is a context that can throw the exception.
+type fatalCtx struct {
 	context.Context
 
-	excepted *atomic.Bool
-	except   error
-	cancel   context.CancelFunc
+	fataled *atomic.Bool
+	fatal   error
+	cancel  context.CancelFunc
 }
 
-func WithException(parent context.Context) Ctx {
+var _ context.Context = &fatalCtx{}
+
+func WithFatal(parent context.Context) Ctx {
 	if parent == nil {
 		panic("")
 	}
 
 	ctx, cancel := context.WithCancel(parent)
-	return &exceptCtx{
-		Context:  ctx,
-		excepted: &atomic.Bool{},
-		cancel:   cancel,
+	return &fatalCtx{
+		Context: ctx,
+		fataled: &atomic.Bool{},
+		cancel:  cancel,
 	}
 }
 
-func (c *exceptCtx) Exception(err error) {
-	if c.excepted.CompareAndSwap(false, true) {
-		c.except = err
+func (c *fatalCtx) Fatal(err error) {
+	if c.fataled.CompareAndSwap(false, true) {
+		c.fatal = err
 		c.cancel()
 	}
 }
 
-func (c *exceptCtx) Err() error {
-	if c.excepted.Load() {
-		return c.except
+func (c *fatalCtx) Err() error {
+	if c.fataled.Load() {
+		return c.fatal
 	} else {
 		return c.Context.Err()
 	}

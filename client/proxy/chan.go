@@ -1,40 +1,68 @@
 package proxy
 
-import "net/netip"
+import (
+	"sync"
+	"sync/atomic"
+)
 
-// udp packet
-type upack struct {
-	laddr, raddr netip.AddrPort
-	data         []byte
+type Chan struct {
+	buff      []**Upack
+	head, len atomic.Int32
+	size      int32
+
+	m                  *sync.Mutex
+	itrigger, otrigger *sync.Cond
 }
 
-type ch [2](chan *upack)
-
-func newCh(cap int) ch {
-	if cap < 1 {
-		panic("")
+func NewChan(cap int) *Chan {
+	c := &Chan{
+		buff: make([]**Upack, cap),
+		size: int32(cap),
+		m:    &sync.Mutex{},
 	}
+	c.itrigger = sync.NewCond(c.m)
+	c.otrigger = sync.NewCond(c.m)
 
-	c := ch{make(chan *upack, cap), make(chan *upack, cap)}
 	for i := 0; i < cap; i++ {
-		c[1] <- &upack{data: make([]byte, 65535)}
+		t := &Upack{}
+		c.buff[i] = &t
 	}
 	return c
 }
 
-func (c *ch) push(u *upack) {
-	t := <-c[1]
+func (c *Chan) Push(u *Upack) *Upack {
+	for c.len.CompareAndSwap(c.size, c.size) {
+		c.m.Lock()
+		c.otrigger.Wait()
+		c.m.Unlock()
+	}
 
-	*t, *u = *u, *t
+	// TODO: len, head need update sync?
+	c.len.Add(1)
+	h := c.head.Add(1)
+	h = h % c.size
 
-	c[0] <- t
+	*c.buff[h], u = u, *c.buff[h]
+	c.itrigger.Signal()
+	return u
 }
 
-func (c *ch) pope(u *upack) {
-	t := <-c[0]
+func (c *Chan) Pope(u *Upack) *Upack {
+	for c.len.CompareAndSwap(0, 0) {
+		c.m.Lock()
+		c.itrigger.Wait()
+		c.m.Unlock()
+	}
 
-	*u, *t = *t, *u
+	c.len.Add(-1)
+	h := c.head.Load() % c.size
+	h = (c.size + h - 1) % c.size
 
-	t.data = t.data[:cap(t.data)]
-	c[1] <- t
+	u, *c.buff[h] = *c.buff[h], u
+	c.otrigger.Signal()
+	return u
+}
+
+func (c *Chan) Len() int {
+	return int(c.len.Load())
 }

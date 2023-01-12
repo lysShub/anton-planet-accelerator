@@ -1,8 +1,8 @@
 package main
 
 import (
-	"anton/client/divert"
 	"fmt"
+	"warthunder/client/divert"
 
 	"github.com/shirou/gopsutil/process"
 )
@@ -58,18 +58,34 @@ func main() {
 }
 
 func captureUdp() {
-	var f = "udp and udp.SrcPort == 19986 and outbound"
+	// var f = "udp and udp.SrcPort == 19986 and outbound"
+	var f = "udp and processId=5776"
 
-	h, err := divert.Open(f, divert.LAYER_NETWORK, 11, divert.FLAG_SNIFF)
+	h, err := divert.Open(f, divert.LAYER_FLOW, 11, divert.FLAG_SNIFF|divert.FLAG_RECV_ONLY)
 	if err != nil {
 		fmt.Println(1, err)
 		return
 	}
 	defer h.Close()
 
-	var da = make([]byte, 512)
+	var da = make([]byte, 60)
 	var addr divert.Address
 	var n int
+	for {
+		n, addr, err = h.Recv(da)
+		if err != nil {
+			fmt.Println(2, err, addr)
+			return
+		}
+
+		a := addr.Flow()
+
+		_, op := addr.Header.Event.String()
+
+		fmt.Println(n, a.LocalAddr(), a.RemoteAddr(), op)
+	}
+
+	return
 	for {
 		n, addr, err = h.Recv(da)
 		if err != nil {
