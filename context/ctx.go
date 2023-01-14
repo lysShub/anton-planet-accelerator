@@ -1,32 +1,32 @@
-package ctx
+package context
 
 import (
-	"context"
+	ctx1 "context"
 	"sync/atomic"
 )
 
 type Ctx interface {
-	context.Context
+	ctx1.Context
 	Fatal(err error)
 }
 
 // fatalCtx is a context that can throw the exception.
 type fatalCtx struct {
-	context.Context
+	ctx1.Context
 
 	fataled *atomic.Bool
 	fatal   error
-	cancel  context.CancelFunc
+	cancel  ctx1.CancelFunc
 }
 
-var _ context.Context = &fatalCtx{}
+var _ ctx1.Context = &fatalCtx{}
 
 func WithFatal(parent Ctx) Ctx {
 	if parent == nil {
 		panic("")
 	}
 
-	ctx, cancel := context.WithCancel(parent)
+	ctx, cancel := ctx1.WithCancel(parent)
 	return &fatalCtx{
 		Context: ctx,
 		fataled: &atomic.Bool{},

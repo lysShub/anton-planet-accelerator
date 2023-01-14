@@ -1,11 +1,11 @@
-package ctx_test
+package context_test
 
 import (
 	"errors"
 	"sync"
 	"testing"
 	"time"
-	"warthunder/ctx"
+	"warthunder/context"
 
 	"github.com/stretchr/testify/require"
 )
@@ -13,34 +13,34 @@ import (
 func Test_Ctx_Timeout(t *testing.T) {
 
 	{ // test timeout
-		c, _ := ctx.WithTimeout(ctx.Background(), time.Second)
+		c, _ := context.WithTimeout(context.Background(), time.Second)
 		<-c.Done()
-		require.Equal(t, c.Err(), ctx.DeadlineExceeded)
+		require.Equal(t, c.Err(), context.DeadlineExceeded)
 	}
 
 	{ // test cancel
-		c, cancel := ctx.WithTimeout(ctx.Background(), time.Second)
+		c, cancel := context.WithTimeout(context.Background(), time.Second)
 		go func() {
 			time.Sleep(time.Millisecond * 10)
 			cancel()
 		}()
 		<-c.Done()
-		require.Equal(t, c.Err(), ctx.Canceled)
+		require.Equal(t, c.Err(), context.Canceled)
 	}
 
 	{ // will not cancel parent
-		c1 := ctx.WithFatal(ctx.Background())
-		c, _ := ctx.WithTimeout(c1, time.Second)
+		c1 := context.WithFatal(context.Background())
+		c, _ := context.WithTimeout(c1, time.Second)
 		<-c.Done()
-		require.Equal(t, c.Err(), ctx.DeadlineExceeded)
+		require.Equal(t, c.Err(), context.DeadlineExceeded)
 		require.NoError(t, c1.Err())
 		_, deaded := c1.Deadline()
 		require.False(t, deaded)
 	}
 
 	{ // will cancel child
-		c1, _ := ctx.WithTimeout(ctx.Background(), time.Second)
-		c2, _ := ctx.WithTimeout(c1, time.Second*3)
+		c1, _ := context.WithTimeout(context.Background(), time.Second)
+		c2, _ := context.WithTimeout(c1, time.Second*3)
 
 		start := time.Now()
 		<-c2.Done()
@@ -54,7 +54,7 @@ func Test_Ctx_Timeout(t *testing.T) {
 
 func Test_Ctx_Fatal(t *testing.T) {
 	{
-		c := ctx.WithFatal(ctx.Background())
+		c := context.WithFatal(context.Background())
 		c.Fatal(errors.New("fatal"))
 
 		<-c.Done()
@@ -65,8 +65,8 @@ func Test_Ctx_Fatal(t *testing.T) {
 	}
 
 	{
-		c1 := ctx.WithFatal(ctx.Background())
-		c2 := ctx.WithFatal(c1)
+		c1 := context.WithFatal(context.Background())
+		c2 := context.WithFatal(c1)
 		c2.Fatal(errors.New("fatal"))
 
 		<-c2.Done()
@@ -78,28 +78,28 @@ func Test_Ctx_Fatal(t *testing.T) {
 	}
 
 	{
-		c1 := ctx.WithFatal(ctx.Background())
-		c2 := ctx.WithFatal(c1)
+		c1 := context.WithFatal(context.Background())
+		c2 := context.WithFatal(c1)
 		c1.Fatal(errors.New("fatal"))
 
 		<-c1.Done()
 		<-c2.Done()
 		require.Equal(t, c1.Err(), errors.New("fatal"))
-		require.Equal(t, c2.Err(), ctx.Canceled)
+		require.Equal(t, c2.Err(), context.Canceled)
 	}
 
 	{
-		c, cancel := ctx.WithCancel(ctx.Background())
-		c1 := ctx.WithFatal(c)
+		c, cancel := context.WithCancel(context.Background())
+		c1 := context.WithFatal(c)
 		cancel()
 
 		<-c1.Done()
-		require.Equal(t, c1.Err(), ctx.Canceled)
+		require.Equal(t, c1.Err(), context.Canceled)
 	}
 
 	{
-		c, _ := ctx.WithCancel(ctx.Background())
-		c1 := ctx.WithFatal(c)
+		c, _ := context.WithCancel(context.Background())
+		c1 := context.WithFatal(c)
 		c1.Fatal(errors.New("fatal"))
 
 		<-c1.Done()
@@ -107,17 +107,17 @@ func Test_Ctx_Fatal(t *testing.T) {
 	}
 
 	{
-		c := ctx.WithFatal(ctx.Background())
-		c1, _ := ctx.WithCancel(c)
+		c := context.WithFatal(context.Background())
+		c1, _ := context.WithCancel(c)
 		c.Fatal(errors.New("fatal"))
 
 		<-c1.Done()
-		require.Equal(t, c1.Err(), ctx.Canceled)
+		require.Equal(t, c1.Err(), context.Canceled)
 	}
 
 	{
-		c := ctx.WithFatal(ctx.Background())
-		c1, cancel := ctx.WithCancel(c)
+		c := context.WithFatal(context.Background())
+		c1, cancel := context.WithCancel(c)
 		cancel()
 
 		<-c1.Done()
@@ -129,30 +129,30 @@ func Test_Ctx_Fatal(t *testing.T) {
 	}
 
 	{
-		c := ctx.WithFatal(ctx.Background())
+		c := context.WithFatal(context.Background())
 
 		start := time.Now()
 		wg := &sync.WaitGroup{}
 		wg.Add(3)
-		go func(c ctx.Ctx) {
+		go func(c context.Ctx) {
 			defer wg.Done()
 
-			c, _ = ctx.WithCancel(c)
+			c, _ = context.WithCancel(c)
 			time.Sleep(time.Second)
 			c.Fatal(errors.New("fatal"))
 		}(c)
 
-		go func(c ctx.Ctx) {
+		go func(c context.Ctx) {
 			defer wg.Done()
 
-			c, _ = ctx.WithTimeout(c, time.Second*2)
+			c, _ = context.WithTimeout(c, time.Second*2)
 			<-c.Done()
 		}(c)
 
-		go func(c ctx.Ctx) {
+		go func(c context.Ctx) {
 			defer wg.Done()
 
-			_, cancel := ctx.WithTimeout(c, time.Millisecond*1500)
+			_, cancel := context.WithTimeout(c, time.Millisecond*1500)
 			cancel()
 		}(c)
 
