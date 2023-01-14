@@ -21,7 +21,7 @@ type fatalCtx struct {
 
 var _ context.Context = &fatalCtx{}
 
-func WithFatal(parent context.Context) Ctx {
+func WithFatal(parent Ctx) Ctx {
 	if parent == nil {
 		panic("")
 	}
@@ -35,6 +35,10 @@ func WithFatal(parent context.Context) Ctx {
 }
 
 func (c *fatalCtx) Fatal(err error) {
+	if err == nil {
+		return
+	}
+
 	if c.fataled.CompareAndSwap(false, true) {
 		c.fatal = err
 		c.cancel()
