@@ -1,8 +1,8 @@
 package proxy
 
 import (
+	"github.com/lysShub/warthunder/fudp"
 	"testing"
-	"warthunder/fudp"
 )
 
 func Test_Ch(t *testing.T) {

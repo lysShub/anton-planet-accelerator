@@ -15,7 +15,7 @@ import (
 )
 
 func GetWarThunderPid(ctx context.Context) (int, error) {
-	const warThunderName = "WarThunder.exe"
+	const warThunderName = "github.com/lysShub/warthunder.exe"
 
 	for {
 		ps, err := process.Processes()

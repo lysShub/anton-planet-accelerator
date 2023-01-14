@@ -2,11 +2,11 @@ package proxy
 
 import (
 	"fmt"
+	"github.com/lysShub/warthunder/client/divert"
+	"github.com/lysShub/warthunder/ctx"
+	"github.com/lysShub/warthunder/fudp"
 	"net/netip"
 	"sync"
-	"warthunder/client/divert"
-	"warthunder/ctx"
-	"warthunder/fudp"
 )
 
 /*

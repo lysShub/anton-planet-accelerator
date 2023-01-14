@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"warthunder/client/divert"
+
+	"github.com/lysShub/warthunder/client/divert"
 
 	"github.com/shirou/gopsutil/process"
 )

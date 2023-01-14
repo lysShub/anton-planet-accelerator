@@ -1,13 +1,13 @@
 package proxy
 
 import (
-	"context"
 	"fmt"
 	"net/netip"
 	"sync"
-	"warthunder/client/divert"
-	"warthunder/ctx"
-	"warthunder/util"
+
+	"github.com/lysShub/warthunder/client/divert"
+	"github.com/lysShub/warthunder/context"
+	"github.com/lysShub/warthunder/util"
 )
 
 type Upack struct {
@@ -54,8 +54,8 @@ type Proxy struct {
 	m *sync.RWMutex
 }
 
-func NewProxy(c context.Context, pid int, filter string, proxyConn Io) *Proxy {
-	c1 := ctx.WithFatal(c)
+func NewProxy(c context.Ctx, pid int, filter string, proxyConn Io) *Proxy {
+	c1 := context.WithFatal(c)
 
 	p := &Proxy{
 		pid:          pid,
@@ -82,7 +82,7 @@ func NewProxy(c context.Context, pid int, filter string, proxyConn Io) *Proxy {
 	return p
 }
 
-// func (p *Proxy) acceptUDP(ctx ctx.Ctx, laddr netip.AddrPort, connected bool) {
+// func (p *Proxy) acceptUDP(ctx context.Ctx, laddr netip.AddrPort, connected bool) {
 // 	has := false
 // 	p.m.Lock()
 // 	if _, has = p.acceptTable[laddr]; !has {
@@ -95,7 +95,7 @@ func NewProxy(c context.Context, pid int, filter string, proxyConn Io) *Proxy {
 // 	}
 // }
 
-// func (p *Proxy) acceptTCP(ctx ctx.Ctx, laddr netip.AddrPort) {
+// func (p *Proxy) acceptTCP(ctx context.Ctx, laddr netip.AddrPort) {
 // 	has := false
 // 	p.m.Lock()
 // 	if _, has = p.acceptTable[laddr]; !has {
@@ -108,12 +108,12 @@ func NewProxy(c context.Context, pid int, filter string, proxyConn Io) *Proxy {
 // 	}
 // }
 
-func (p *Proxy) accept(c ctx.Ctx, s sock, connected bool) {
+func (p *Proxy) accept(c context.Ctx, s sock, connected bool) {
 	var cancel context.CancelFunc
 	switch s.proto {
 	case divert.IPPROTO_UDP:
 		if !connected {
-			// TODO: 尝试ctx.WithTimeout只返回cancel, 这样使用者就可以不用引入官方context包
+			// TODO: 尝试context.WithTimeout只返回cancel, 这样使用者就可以不用引入官方context包
 			_, cancel = context.WithCancel(c)
 		}
 	case divert.IPPROTO_TCP:

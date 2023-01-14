@@ -1,4 +1,4 @@
-module warthunder
+module github.com/lysShub/warthunder
 
 go 1.19
 

@@ -5,7 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"warthunder/context"
+
+	"github.com/lysShub/warthunder/context"
 
 	"github.com/stretchr/testify/require"
 )

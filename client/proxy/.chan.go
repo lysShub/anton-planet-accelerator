@@ -1,6 +1,6 @@
 package proxy
 
-import "warthunder/fudp"
+import "github.com/lysShub/warthunder/fudp"
 
 type ch [2](chan *fudp.Upack)
 
