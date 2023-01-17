@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/lxn/win v0.0.0-20210218163916-a377121e959e
+	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/sys v0.3.0

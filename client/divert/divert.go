@@ -128,28 +128,34 @@ type DATA_FLOW struct {
 	Protocol         Proto     // Protocol.
 }
 
-func (d *DATA_FLOW) LocalAddr() netip.Addr {
+func (d *DATA_FLOW) LocalAddr() netip.AddrPort {
+	var addr netip.Addr
 	if d.localAddr[1] == 0xffff {
 		_t := *(*[4]byte)(unsafe.Pointer(&d.localAddr[0]))
 
 		// TODO: don't know why, but it's reversed
 		_t[0], _t[1], _t[2], _t[3] = _t[3], _t[2], _t[1], _t[0]
-		return netip.AddrFrom4(_t)
+		addr = netip.AddrFrom4(_t)
 	} else {
-		return netip.AddrFrom16(*(*[16]byte)(unsafe.Pointer(&d.localAddr)))
+		addr = netip.AddrFrom16(*(*[16]byte)(unsafe.Pointer(&d.localAddr)))
 	}
+
+	return netip.AddrPortFrom(addr, d.LocalPort)
 }
 
-func (d *DATA_FLOW) RemoteAddr() netip.Addr {
+func (d *DATA_FLOW) RemoteAddr() netip.AddrPort {
+	var addr netip.Addr
 	if d.localAddr[1] == 0xffff {
 		_t := *(*[4]byte)(unsafe.Pointer(&d.remoteAddr[0]))
 
 		// TODO: don't know why, but it's reversed
 		_t[0], _t[1], _t[2], _t[3] = _t[3], _t[2], _t[1], _t[0]
-		return netip.AddrFrom4(_t)
+		addr = netip.AddrFrom4(_t)
 	} else {
-		return netip.AddrFrom16(*(*[16]byte)(unsafe.Pointer(&d.remoteAddr)))
+		addr = netip.AddrFrom16(*(*[16]byte)(unsafe.Pointer(&d.remoteAddr)))
 	}
+
+	return netip.AddrPortFrom(addr, d.LocalPort)
 }
 
 type DATA_SOCKET = DATA_FLOW
