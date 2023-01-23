@@ -65,8 +65,8 @@ func (r *MIB_UDPROW_OWNER_MODULE) localPort() uint16 {
 	return uint16(r.dwLocalPort)
 }
 
-func (r *MIB_UDPROW_OWNER_MODULE) OwningPid() int {
-	return int(r.dwOwningPid)
+func (r *MIB_UDPROW_OWNER_MODULE) OwningPid() uint32 {
+	return r.dwOwningPid
 }
 
 // CreateTime UTC-time
@@ -154,7 +154,7 @@ start:
 	return t, nil
 }
 
-func GetUDPTableByPid(pid int) ([]MIB_UDPROW_OWNER_MODULE, error) {
+func GetUDPTableByPid(pid uint32) ([]MIB_UDPROW_OWNER_MODULE, error) {
 	t, err := GetExtendedUdpTable()
 	if err != nil {
 		return nil, err
@@ -168,5 +168,4 @@ func GetUDPTableByPid(pid int) ([]MIB_UDPROW_OWNER_MODULE, error) {
 		}
 	}
 	return rows, nil
-
 }

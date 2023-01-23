@@ -12,6 +12,9 @@ import (
 	"github.com/lysShub/warthunder/context"
 )
 
+// TDOD: 对于代理启动后再建立的连接, 处理逻辑是：监听到Flow Established事件后, 启动相应的Network代理。
+// 这个过程中可能会漏掉数据包, 及在Network代理前, 已经发送了一些数据包。
+
 type proxy struct {
 	pid          int
 	parentFilter string
@@ -137,7 +140,6 @@ func (p *proxy) proxyOther(ctx context.Ctx) {
 		default:
 		}
 	}
-
 }
 
 func (p *proxy) addProxy(ctx context.Ctx, s sock) error {
