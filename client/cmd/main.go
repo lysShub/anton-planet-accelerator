@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/lysShub/warthunder/client/divert"
+	"github.com/lysShub/warthunder/fudp"
 
 	"github.com/shirou/gopsutil/process"
 )
@@ -60,9 +61,9 @@ func main() {
 
 func captureUdp() {
 	// var f = "udp and udp.SrcPort == 19986 and outbound"
-	var f = "udp and processId=5776"
+	var f = "udp and outbound and remoteAddr==114.116.254.26 and remotePort==19986 "
 
-	h, err := divert.Open(f, divert.LAYER_FLOW, 11, divert.FLAG_SNIFF|divert.FLAG_RECV_ONLY)
+	h, err := divert.Open(f, divert.LAYER_NETWORK, 11, divert.FLAG_RECV_ONLY)
 	if err != nil {
 		fmt.Println(1, err)
 		return
@@ -79,11 +80,10 @@ func captureUdp() {
 			return
 		}
 
-		a := addr.Flow()
+		u := fudp.Ipack(da[:n])
 
-		_, op := addr.Header.Event.String()
+		fmt.Println(u.Laddr().String(), u.Raddr().String())
 
-		fmt.Println(n, a.LocalAddr(), a.RemoteAddr(), op)
 	}
 
 	return

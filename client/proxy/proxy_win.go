@@ -8,6 +8,7 @@ import (
 
 	"github.com/lysShub/warthunder/client/divert"
 	"github.com/lysShub/warthunder/context"
+	"github.com/lysShub/warthunder/fudp"
 	"github.com/lysShub/warthunder/util"
 )
 
@@ -133,8 +134,8 @@ func (p *proxy) acceptUnconn(ctx context.Ctx, laddr netip.AddrPort) {
 			p.addProxy(ctx, s)
 
 			// TODO: send a udp packet to remote
-			var u *Upack = &Upack{}
-			p.proxyConn.Write(u.Marshal())
+			var u fudp.Ipack
+			p.proxyConn.Write(u)
 
 			return
 		}
@@ -173,6 +174,7 @@ func (p *proxy) acceptPid(ctx context.Ctx, pid uint32) {
 
 		fl := addr.Flow()
 		s := sock{
+			proto: fl.Protocol,
 			laddr: fl.LocalAddr(),
 			raddr: fl.RemoteAddr(),
 		}
@@ -193,6 +195,7 @@ func (p *proxy) addProxy(ctx context.Ctx, s sock) {
 		return
 	}
 
+	// TODO: protocol
 	var f = fmt.Sprintf("udp and outbound and localAddr=%s and localPort=%d and remoteAddr=%s and remotePort=%d", s.laddr.Addr().String(), s.laddr.Port(), s.raddr.Addr().String(), s.raddr.Port())
 
 	h, err := divert.Open(f, divert.LAYER_NETWORK, 11, divert.FLAG_READ_ONLY)
@@ -241,8 +244,8 @@ func (p *proxy) proxy(ctx context.Ctx, h divert.Handle, s sock) {
 		p.addProxy(ctx, s)
 
 		// TODO: send a udp packet to remote
-		var u *Upack = &Upack{}
-		p.proxyConn.Write(u.Marshal())
+		var u fudp.Ipack
+		p.proxyConn.Write(u)
 
 	}
 }

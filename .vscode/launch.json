@@ -5,11 +5,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "local",
+            "name": "root",
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${fileDirname}",
+            "program": "client/cmd/",
             "asRoot": true,
             "console": "integratedTerminal",
         }
