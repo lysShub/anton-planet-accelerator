@@ -3,7 +3,6 @@ package fudp
 import (
 	"errors"
 	"net"
-	"sort"
 	"unsafe"
 
 	"github.com/klauspost/reedsolomon"
@@ -149,110 +148,4 @@ func (s *Fudp) Read(b []byte) (n int, err error) {
 	p.BlockIdx()
 
 	return 0, nil
-}
-
-// TDOD: 接收处理
-
-type group struct {
-	startIdx       uint32
-	blockSize      int
-	groupDataLen   int
-	blocks         [][]byte
-	parity         []byte
-	putLen, getLen int
-	active         bool
-}
-
-func newGroup(blockSize, groupDataLen int, startBlockIdx uint32) *group {
-	var g = &group{
-		startIdx:  uint32(startBlockIdx),
-		blockSize: blockSize,
-		parity:    make([]byte, 0, blockSize),
-		active:    true,
-	}
-	for i := 0; i < groupDataLen; i++ {
-		g.blocks = append(g.blocks, make([]byte, 0, blockSize))
-	}
-	return g
-}
-
-func (g *group) IsGroup(idx uint32) bool {
-	return g.startIdx < idx && idx < g.startIdx+uint32(g.groupDataLen)
-}
-
-func (g *group) PutBlock(idx uint32, b []byte) (ok bool) {
-	i := idx - g.startIdx
-
-	copy(g.blocks[i], b)
-
-	g.putLen++
-	return g.putLen >= g.groupDataLen-1
-}
-
-func (g *group) Active() bool {
-	return g.active
-}
-
-func (g *group) Reset() {}
-
-func (g *group) GetData() []byte {
-	return nil
-}
-
-type groups struct {
-	list []*group
-}
-
-func newGroups() *groups {
-	return &groups{}
-}
-
-func (g *groups) Len() int { return len(g.list) }
-func (g *groups) Less(i, j int) bool {
-	return (!g.list[i].Active() && g.list[j].Active()) ||
-		(g.list[i].Active() && g.list[j].Active() && g.list[i].startIdx < g.list[j].startIdx)
-}
-func (g *groups) Swap(i, j int) { g.list[i], g.list[j] = g.list[j], g.list[i] }
-
-func (g *groups) getGroup(blockSize, groupDataLen int, idx uint32) *group {
-	for _, gu := range g.list {
-		if !gu.Active() &&
-			gu.blockSize == blockSize &&
-			gu.groupDataLen == groupDataLen {
-
-			gu.active = true
-			gu.startIdx = idx
-			return gu
-		}
-	}
-
-	gp := newGroup(blockSize, groupDataLen, idx)
-	g.list = append(g.list, gp)
-
-	sort.Sort(g)
-	return gp
-}
-
-func (g *groups) PutPacket(p fudpPack) {
-	if p.IsFecStart() {
-		gu := g.getGroup(p.Mtu(), p.FecDataLen(), p.BlockIdx())
-		gu.PutBlock(p.BlockIdx(), p.Payload())
-	}
-
-	idx := p.BlockIdx()
-	for i := range g.list {
-		if g.list[i].IsGroup(idx) {
-			g.list[i].PutBlock(idx, p.Payload())
-			return
-		}
-	}
-}
-
-func (g *groups) GetData() []byte {
-	for _, g := range g.list {
-		if g.Active() {
-			return g.GetData()
-		}
-	}
-	return nil
 }
