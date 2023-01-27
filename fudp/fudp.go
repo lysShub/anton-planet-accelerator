@@ -151,6 +151,8 @@ func (s *Fudp) Read(b []byte) (n int, err error) {
 	return 0, nil
 }
 
+// TDOD: 接收处理
+
 type group struct {
 	startIdx       uint32
 	blockSize      int
