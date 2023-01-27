@@ -247,12 +247,10 @@ func (g *groups) PutPacket(p fudpPack) {
 }
 
 func (g *groups) GetData() []byte {
-
 	for _, g := range g.list {
 		if g.Active() {
 			return g.GetData()
 		}
 	}
-
 	return nil
 }
