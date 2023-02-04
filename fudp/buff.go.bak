@@ -1,0 +1,146 @@
+package fudp
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+type RingBuffer struct {
+	buff       []byte // 存的是fudpPack
+	head, size int    // for buff, head is the offset that next write to data
+	expIdx     uint32 // expect next block index
+
+	// const
+	blockSize int // fec block大小, mtu*8 + fuHeaderLen
+	groupSize int // fec 分组大小
+
+	// runtime
+	currentI      int // current group read index
+	currentGroupI int
+	currentSkipDi int // 因为最多只能恢复一个，记录多的也没用， -1为无效值
+
+	m          *sync.RWMutex
+	putTrigger *sync.Cond
+}
+
+func NewRingBuffer(blockSize, groupSize int) *RingBuffer {
+	return nil
+}
+
+func (r *RingBuffer) Put(b fudpPack) {
+	r.m.Lock()
+
+	bi := b.BlockIdx()
+	bn := len(b)
+
+	i := r.calcOffset(bi)
+	if bi >= r.expIdx {
+		// chech capacity
+		delta := int(bi-r.expIdx+1) * r.blockSize
+		for r.size+delta > len(r.buff) {
+			r.grow()
+		}
+
+		n := copy(r.buff[i:], b)
+		if n < bn {
+			r.head = copy(r.buff[0:], b[n:])
+		} else {
+			r.head = (i + n) % len(r.buff)
+		}
+
+		r.size += delta
+		r.expIdx = bi + 1
+	} else {
+		if !r.blockNull(i) {
+			fmt.Println("repeated block data") // statistic
+		}
+
+		n := copy(r.buff[i:], b)
+		if n < bn {
+			r.head = copy(r.buff[0:], b[n:])
+		}
+	}
+
+	r.m.Unlock()
+	r.putTrigger.Signal()
+}
+
+var nullT = time.Time{}
+
+func (r *RingBuffer) Read(b []byte) (int, error) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	/*
+		策略：如果距最后一个丢包后的第K个包都收到了，就认为认为此数据包确实丢失了, 将不再阻塞读取, 也就是说将
+			  跳过此数据包直接读取后面的数据包; 这个逻辑与fec分组无关。
+			 每次的tryRead都将检查是否能通过fec恢复数据（当前的或者之前跳过的）。 一个旧的组将被release当下个组读取完成时。
+			 同时增加超时策略, 有一个goroutine定时Trigger即可。如果等待一个空缺的包超过T时, 也可跳过。
+	*/
+	const K = 5
+	const T = 10 // ms
+
+	var skipWait time.Time
+	for {
+		r.putTrigger.Wait()
+
+		// check fec recover
+
+		if !r.blockNull(r.currentI) {
+			// 直接返回并自增
+
+		} else {
+			// next K
+			if !r.nextBlocksNotNull(r.currentI, K) {
+				goto skip
+			}
+
+			// timeout
+			if !r.blockNull((r.currentI + 1) % len(r.buff)) {
+				if skipWait == nullT {
+					skipWait = time.Now()
+				} else {
+					if time.Since(skipWait).Milliseconds() > T {
+						goto skip
+					}
+				}
+			}
+		}
+	}
+
+skip:
+
+	return 0, nil
+}
+
+func (r *RingBuffer) tryRead(b []byte) {}
+
+// next K blocks not null, not include i's block
+func (r *RingBuffer) nextBlocksNotNull(i, K int) bool {
+	j := (i + r.blockSize*K) % len(r.buff)
+
+	for ; i != j; j = (j - r.blockSize) % len(r.buff) {
+		if r.blockNull(j) {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *RingBuffer) grow() {
+}
+
+func (r *RingBuffer) calcOffset(idx uint32) int {
+	return (r.head + (int(idx)-int(r.expIdx))*r.blockSize) % len(r.buff)
+}
+
+func (r *RingBuffer) blockNull(i int) bool {
+	i = (i + r.blockSize - 4) % len(r.buff)
+	return r.buff[i] == byte((r.blockSize-fudpHdrLen)/8)
+}
+
+func (r *RingBuffer) nullBlock(i int) {
+	i = (i + r.blockSize - 4) % len(r.buff)
+	r.buff[i] = 0
+}

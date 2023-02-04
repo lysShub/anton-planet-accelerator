@@ -10,17 +10,27 @@ import (
 )
 
 // udp conn use fec
-/*
-	fudp packet structure:
-	因为要同时兼容流与数据报, 而且不存在工作模式、没有握手, 所以要把所有的信息都放在header
-
-	{origin-data :  : reliable(1b) : reliable-resend(1) : stream(1b) : mtu(1B, *8) : fec-group-head(1b) : fec-group-len(4b, n:1) : block-end(1b) : block-idx(4B)}
-
-*/
 
 /*
-	fudp packet structure:
-	{origin-data:  frag-end-block-flag(1b) : fec-start-block-flag(1b) : fec-data-block-len(6b) : fudp-mtu(1B x8) : block-idx(4B) }
+	一个fudp数据包称为Block, 结构为:
+	{
+		HEAD: {
+			DF-Flag(1b) 	  : 分片标志, 仓库IPv4 DF, 0表示分片结束
+			HEAD-Flag(1b) 	  : FEC分组开始标志, 其后GROUP-Len哥Block属于同一个组, 可以用于恢复
+			GROUP-Len(6b) 	  : FEC分组大小, 表示一个组中有多少哥Block。每组最后一个Block为校验数据, 能够恢复组中的一个数据包
+			BLOCK-Size(1B x8) : FEC分组中, 每个block的大小, 不足用0填充
+			BLOCK-Idx(4B) 	  : Block index, 模拟为流式。
+		}
+
+		PAYLOAD: {
+			data(nB): 最多可以负载
+		}
+	}
+
+
+
+
+
 */
 
 type fudpPack []byte
