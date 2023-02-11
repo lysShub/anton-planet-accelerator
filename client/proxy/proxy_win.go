@@ -8,7 +8,7 @@ import (
 
 	"github.com/lysShub/warthunder/client/divert"
 	"github.com/lysShub/warthunder/context"
-	"github.com/lysShub/warthunder/fudp"
+	"github.com/lysShub/warthunder/helper"
 	"github.com/lysShub/warthunder/util"
 )
 
@@ -134,7 +134,7 @@ func (p *proxy) acceptUnconn(ctx context.Ctx, laddr netip.AddrPort) {
 			p.addProxy(ctx, s)
 
 			// TODO: send a udp packet to remote
-			var u fudp.Ipack
+			var u helper.Ipack
 			p.proxyConn.Write(u)
 
 			return
@@ -244,7 +244,7 @@ func (p *proxy) proxy(ctx context.Ctx, h divert.Handle, s sock) {
 		p.addProxy(ctx, s)
 
 		// TODO: send a udp packet to remote
-		var u fudp.Ipack
+		var u helper.Ipack
 		p.proxyConn.Write(u)
 
 	}

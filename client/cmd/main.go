@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/lysShub/warthunder/client/divert"
-	"github.com/lysShub/warthunder/fudp"
+	"github.com/lysShub/warthunder/helper"
 
 	"github.com/shirou/gopsutil/process"
 )
@@ -80,7 +80,7 @@ func captureUdp() {
 			return
 		}
 
-		u := fudp.Ipack(da[:n])
+		u := helper.Ipack(da[:n])
 
 		fmt.Println(u.Laddr().String(), u.Raddr().String())
 

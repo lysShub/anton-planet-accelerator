@@ -1,4 +1,6 @@
-package fudp
+package helper
+
+// IP packet parser
 
 import (
 	"encoding/binary"
