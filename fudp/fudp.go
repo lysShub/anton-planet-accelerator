@@ -56,24 +56,6 @@ func (f *Fudp) SetFEC(p int) *Fudp {
 	return f
 }
 
-// SetMTU 设置MTU, 将作用于DF
-// mtu = DHdrSize + BlockSize
-// BlockSize的限制是: 1. 8的整数倍   2. 范围为[8, 2040]
-func (f *Fudp) SetMTU(mtu int) {
-	f.setMTU = func() {
-		bs := mtu - DHdrSize
-		if bs < 0 {
-			return
-		}
-		if bs%8 != 0 {
-			bs = bs - bs%8 + 8
-		}
-
-		f.parityBuff = f.parityBuff.SetBLOCKSize(bs)
-		f.blockBuff = f.blockBuff.SetBLOCKSize(bs)
-	}
-}
-
 func (f *Fudp) gidx() (idx int) {
 	idx = f.groupIdx
 	f.groupIdx = (f.groupIdx + 1) % f.groupLen
