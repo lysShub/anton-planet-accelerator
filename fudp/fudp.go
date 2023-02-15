@@ -1,7 +1,6 @@
 package fudp
 
 import (
-	"fmt"
 	"net"
 
 	"github.com/klauspost/reedsolomon"
@@ -10,21 +9,21 @@ import (
 
 // udp conn use fec
 
-const MTU = 1450 // 不包括head
+const MTU = 1450
 
 type Fudp struct {
 	// config
-	groupLen int
-	rawConn  net.Conn
-	fecEnc   reedsolomon.Encoder
+	groupDataShards int // groupShards = groupDataShards + 1(groupParityShard)
+	rawConn         net.Conn
+	fecEnc          reedsolomon.Encoder
 
 	setFec func()
 
 	// write helper
-	groupHash  uint16
-	groupIdx   uint8
-	blockBuff  Upack
-	parityBuff Upack
+	groupHash, groupIdx uint8
+	blockBuff           Upack
+	parityBuff          Upack
+	parityLen           int
 
 	// read helper
 
@@ -47,17 +46,23 @@ func NewFudp(conn net.Conn) *Fudp {
 func (f *Fudp) SetFEC(p int) *Fudp {
 	f.setFec = func() {
 		if 1 <= p && p <= 64 {
-			f.groupLen = p
+			f.groupDataShards = p
 		}
 	}
 	return f
 }
 
-func (f *Fudp) ghash() (hash uint16, gidx uint8, tail bool) {
+func (f *Fudp) wrefresh() (hash, gidx uint8, tail bool) {
 	hash = f.groupHash
 	gidx = f.groupIdx
-	f.groupIdx = (f.groupIdx + 1) % uint8(f.groupLen)
-	if f.groupIdx == 0 {
+	if gidx == 0 { // group start
+		f.parityBuff = f.parityBuff[:cap(f.parityBuff)]
+		memset.Memset(f.parityBuff[:f.parityLen+HdrSize], 0)
+		f.parityLen = 0
+	}
+
+	f.groupIdx = (f.groupIdx + 1) % uint8(f.groupDataShards)
+	if f.groupIdx == 0 { // group end
 		tail = true
 		f.groupHash += 1
 	}
@@ -66,44 +71,49 @@ func (f *Fudp) ghash() (hash uint16, gidx uint8, tail bool) {
 }
 
 func (f *Fudp) Write(b []byte) (n int, err error) {
-	if len(b) > MTU {
-		return 0, fmt.Errorf("message %d too long than %d", len(b), MTU)
-	}
+	n = copy(f.blockBuff[0:], b[0:])
+	defer func() {
+		f.blockBuff = f.blockBuff[:cap(f.blockBuff)]
+		memset.Memset(f.blockBuff[:n+HdrSize], 0)
+	}()
 
-	memset.Memset(f.blockBuff[DHdrSize+n:], 0)
-	n = copy(f.blockBuff[DHdrSize:], b[0:])
-	ghash, gidx, tail := f.ghash()
-	f.blockBuff.SetTAILFlag(tail)
+	ghash, gidx, tail := f.wrefresh()
+	f.blockBuff = f.blockBuff[:n+HdrSize]
 	f.blockBuff.SetGroupHash(ghash)
 	f.blockBuff.SetGROUPIdx(gidx)
+	f.blockBuff.SetFlag(Data)
 
 	// fec
-	f.fecEnc.EncodeIdx(f.blockBuff[DHdrSize:], int(gidx), [][]byte{f.parityBuff[DHdrSize:]})
+	if err = f.fecEnc.EncodeIdx(f.blockBuff, int(gidx), [][]byte{f.parityBuff[:len(f.blockBuff)]}); err != nil {
+		return 0, err
+	} else {
+		f.parityLen = max(f.parityLen, len(f.blockBuff))
+	}
 
 	// send
-	if _, err = f.rawConn.Write(f.blockBuff[:DHdrSize+n]); err != nil {
+	if _, err = f.rawConn.Write(f.blockBuff[:HdrSize+n]); err != nil {
 		return 0, err
 	}
 
 	if tail {
-		k := f.k()
-		if _, err = f.rawConn.Write(f.parityBuff[:k]); err != nil {
+		f.parityBuff = f.parityBuff[:f.parityLen+HdrSize]
+		f.blockBuff.SetGroupHash(ghash)
+		f.blockBuff.SetGROUPIdx(gidx + 1)
+		f.parityBuff.SetFlag(DataGroupTail)
+
+		if _, err = f.rawConn.Write(f.parityBuff); err != nil {
 			return 0, err
 		}
-		memset.Memset(f.parityBuff[DHdrSize:], 0)
 	}
 
 	return 0, nil
 }
 
-func (f *Fudp) k() int {
-	i := len(f.parityBuff) - 1
-	for ; i >= 0; i-- {
-		if f.parityBuff[i] != 0 {
-			break
-		}
+func max[T int](x, y T) T {
+	if x > y {
+		return x
 	}
-	return i + 1
+	return y
 }
 
 func (s *Fudp) Read(b []byte) (n int, err error) {
