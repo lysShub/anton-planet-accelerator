@@ -1,6 +1,7 @@
 package fudp
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/klauspost/reedsolomon"
@@ -9,22 +10,21 @@ import (
 
 // udp conn use fec
 
+const MTU = 1450 // 不包括head
+
 type Fudp struct {
 	// config
 	groupLen int
-	bockSize int
-
-	rawConn net.Conn
-	fecEnc  reedsolomon.Encoder
+	rawConn  net.Conn
+	fecEnc   reedsolomon.Encoder
 
 	setFec func()
-	setMTU func()
 
 	// write helper
-	blockIdx   uint16
-	groupIdx   int
-	blockBuff  Dpack
-	parityBuff Dpack
+	groupHash  uint16
+	groupIdx   uint8
+	blockBuff  Upack
+	parityBuff Upack
 
 	// read helper
 
@@ -48,71 +48,62 @@ func (f *Fudp) SetFEC(p int) *Fudp {
 	f.setFec = func() {
 		if 1 <= p && p <= 64 {
 			f.groupLen = p
-
-			f.parityBuff.SetGROUPLen(uint8(p))
-			f.blockBuff.SetGROUPLen(uint8(p))
 		}
 	}
 	return f
 }
 
-func (f *Fudp) gidx() (idx int) {
-	idx = f.groupIdx
-	f.groupIdx = (f.groupIdx + 1) % f.groupLen
-	return
-}
+func (f *Fudp) ghash() (hash uint16, gidx uint8, tail bool) {
+	hash = f.groupHash
+	gidx = f.groupIdx
+	f.groupIdx = (f.groupIdx + 1) % uint8(f.groupLen)
+	if f.groupIdx == 0 {
+		tail = true
+		f.groupHash += 1
+	}
 
-func (f *Fudp) bidx() (idx uint16) {
-	idx = f.blockIdx
-	f.blockIdx++
-	return
+	return hash, gidx, tail
 }
 
 func (f *Fudp) Write(b []byte) (n int, err error) {
-	m := len(b)
-	for i := 0; i < m; {
-		gidx := f.gidx()
+	if len(b) > MTU {
+		return 0, fmt.Errorf("message %d too long than %d", len(b), MTU)
+	}
 
-		n := copy(f.blockBuff[DHdrSize:], b[i:])
-		if m-(i+n) > 0 {
-			f.blockBuff.SetDFFlag(true)
-		} else {
-			f.blockBuff.SetDFFlag(false)
-		}
-		if gidx == 0 {
-			f.blockBuff.SetHEADFlag(true)
-		} else {
-			f.blockBuff.SetHEADFlag(false)
-		}
-		f.blockBuff.SetBLOCKIdx(f.bidx())
+	memset.Memset(f.blockBuff[DHdrSize+n:], 0)
+	n = copy(f.blockBuff[DHdrSize:], b[0:])
+	ghash, gidx, tail := f.ghash()
+	f.blockBuff.SetTAILFlag(tail)
+	f.blockBuff.SetGroupHash(ghash)
+	f.blockBuff.SetGROUPIdx(gidx)
 
-		// fec
-		if n < f.bockSize {
-			memset.Memset(f.blockBuff[DHdrSize+n:], 0)
-		}
-		f.fecEnc.EncodeIdx(f.blockBuff[DHdrSize:], gidx, [][]byte{f.parityBuff[DHdrSize:]})
+	// fec
+	f.fecEnc.EncodeIdx(f.blockBuff[DHdrSize:], int(gidx), [][]byte{f.parityBuff[DHdrSize:]})
 
-		// send
-		if _, err = f.rawConn.Write(f.blockBuff[:DHdrSize+n]); err != nil {
+	// send
+	if _, err = f.rawConn.Write(f.blockBuff[:DHdrSize+n]); err != nil {
+		return 0, err
+	}
+
+	if tail {
+		k := f.k()
+		if _, err = f.rawConn.Write(f.parityBuff[:k]); err != nil {
 			return 0, err
 		}
-
-		// group tail, send fec-packet
-		if gidx == f.groupLen-1 {
-			f.parityBuff.SetBLOCKIdx(f.bidx())
-			// f.parityBuff.SetDFFlag(false)
-			// f.parityBuff.SetHEADFlag(false)
-
-			if _, err = f.rawConn.Write(f.parityBuff); err != nil {
-				return 0, err
-			}
-			memset.Memset(f.parityBuff[DHdrSize:], 0)
-		}
-
-		i += n
+		memset.Memset(f.parityBuff[DHdrSize:], 0)
 	}
 
 	return 0, nil
+}
+
+func (f *Fudp) k() int {
+	i := len(f.parityBuff) - 1
+	for ; i >= 0; i-- {
+		if f.parityBuff[i] != 0 {
+			break
+		}
+	}
+	return i + 1
 }
 
 func (s *Fudp) Read(b []byte) (n int, err error) {

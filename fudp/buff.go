@@ -1,9 +1,9 @@
 package fudp
 
 import (
-	"net"
+	"fmt"
 
-	"github.com/klauspost/reedsolomon"
+	"github.com/tmthrgd/go-memset"
 )
 
 // TODO: 放弃DF, 放弃DF后idx亦可抛弃, 只保留groupId即可
@@ -14,66 +14,94 @@ import (
 //   则fec结果有:
 //    [11 0 5 12 0 0 0 0 0 0 0 0 0 0]
 
-// 相较于bak, 此处的策略是完全不需要等待然后skip
-//  表现为读取阻塞写入不阻塞
-
-type FecBuff struct {
-	// buff可以存储n个group, 而且是对齐的
-	// 读取时会将其copy到buff中
-	// 读取不是有序的, 优先读取最前的数据包
-	//
-	// 策略：
-	// 在尝试读取下下个组时才会检查是否能恢复（如果有丢包的话）
-
-	// const
-	packSize int
-	groupLen int
-	rawConn  net.Conn
-	fecEnc   reedsolomon.Encoder
-
-	buff   []byte
-	head   int // 记录最前面的group
-	expIdx uint16
-}
-
-type block struct {
-	b Dpack
-	n int
-}
-
 type group struct {
-	bs   []block
-	sidx int // 组中第一个block的idx
-	own  int // 记录本组中收到多少个Dpack
+	bs    []Upack
+	ghash uint16
+	count int
 }
 
-func (g *group) in(idx int) bool {
-	return g.sidx <= idx && idx < g.sidx+len(g.bs)
-}
+func newGroup() *group { return nil }
 
-func (g *group) put(b Dpack) {
+func (g *group) put(p Upack) bool {
+	if g.ghash != p.GroupHash() {
+		// 新group
+		// g.reset()
 
-}
+	} else {
+		i := p.GROUPIdx()
+		g.grow(int(i))
+		if len(g.bs[i]) < len(p) {
+			g.bs[i] = make(Upack, len(p))
+		}
+		memset.Memset(g.bs[i], 0)
+		n := copy(g.bs[i], p)
+		g.bs[i] = g.bs[i][:n]
 
-func (g *group) used() bool {
+		g.count++
+	}
+
 	return false
 }
 
-func NewRingBuffer(blockSize, groupLen, n int) *FecBuff {
-	b := blockSize + DHdrSize
+func (g *group) reset(hash uint16) {
+	if g.count+1 == len(g.bs) {
+		if g.bs[len(g.bs)-1][0] != 0 {
+			fmt.Println("可以恢复")
+		} else {
+			fmt.Println("parity丢弃")
+		}
+	}
 
-	return &FecBuff{
-		packSize: b,
-		groupLen: groupLen,
+	g.bs = g.bs[:0]
+	g.ghash = hash
+	g.count = 0
+}
 
-		buff: make([]byte, b*groupLen*n),
+func (g *group) grow(n int) {
+	if len(g.bs) > n {
+		return
+	}
+	if cap(g.bs) > n {
+		g.bs = g.bs[:n]
+	}
+	for len(g.bs) < n {
+		// g.bs = append(g.bs, make(Upack, g.maxSize))
 	}
 }
 
-func (r *FecBuff) Put(b Dpack) {
-
+type buff struct {
+	n uint16
+	b []group
 }
 
-func (r *FecBuff) Get(b []byte) (n int, err error) {
-	return 0, nil
+func (b *buff) getG(ghash uint16) *group {
+	return &b.b[ghash%b.n]
 }
+
+func (b *buff) Put(u Upack) {
+	b.getG(u.GroupHash()).put(u)
+}
+
+// type buff struct {
+// 	b map[uint16]*group
+// }
+
+// func (b *buff) gIdx(ghash uint16) *group {
+// 	if g, ok := b.b[ghash]; ok {
+// 		return g
+// 	} else {
+// 		g = newGroup()
+// 		b.b[ghash] = g
+// 		return g
+// 	}
+// }
+
+// func (b *buff) Put(p Upack) bool {
+// 	g := b.gIdx(p.GroupHash())
+// 	return g.put(p)
+// }
+
+// func (b *buff) Get(d []byte) (n int, err error) {
+
+// 	return
+// }
