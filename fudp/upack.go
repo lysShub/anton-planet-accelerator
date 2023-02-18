@@ -14,7 +14,7 @@ type Upack []byte
 		TAIL: {
 			Group-Hash(1B)    : group id, 表明所属组
 			Shard-Idx(1B)     : FEC组中的shard序号
-			Shard-Flag(1B)    : 标志属性, 非0
+			Shard-Flag(1B)    : 标志属性, 非0xFF
 		}
 	}
 */
@@ -22,8 +22,7 @@ type Upack []byte
 type Flag uint8
 
 const (
-	_ Flag = iota
-	Data
+	Data Flag = iota
 	DataGroupTail
 )
 
