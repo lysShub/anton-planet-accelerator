@@ -1,9 +1,11 @@
 package fudp
 
 import (
+	"errors"
+	"fmt"
 	"net"
 
-	"github.com/klauspost/reedsolomon"
+	"github.com/lysShub/warthunder/fudp/fec"
 	"github.com/tmthrgd/go-memset"
 )
 
@@ -13,110 +15,181 @@ const MTU = 1450
 
 type Fudp struct {
 	// config
-	groupDataShards int // groupShards = groupDataShards + 1(groupParityShard)
-	rawConn         net.Conn
-	fecEnc          reedsolomon.Encoder
+	dataShards, parityShards uint8 // groupShards = groupDataShards + 1(groupParityShard)
+	rawConn                  net.Conn
 
 	setFec func()
 
 	// write helper
-	groupHash, groupIdx uint8
-	blockBuff           Upack
-	parityBuff          Upack
-	parityLen           int
+	groupInc, groupIdx uint8
+	blockBuff          Upack
+	parityBuff         Upack
 
 	// read helper
+	ring       Ring
+	fecReGhash uint8
+	fecReFlag  bool
+	derep      Derep
 
+	// statistic
+	pl *Statistic
 }
 
 // NewFudp
 func NewFudp(conn net.Conn) *Fudp {
-	return &Fudp{}
+	return &Fudp{
+		dataShards:   16,
+		parityShards: 1,
+		rawConn:      conn,
+
+		groupInc:   1,
+		blockBuff:  make(Upack, 0, 65536),
+		parityBuff: make(Upack, 0, 65536),
+
+		pl: &Statistic{},
+	}
 }
 
-// SetFEC 设置fec的纠错能力p[1, 64].
-//
-//	p=16表示每组中有16数据包, 有一个校验数据包, 17个数据包
-//
-// 中丢失一个数据包将能被恢复。
-//
-//	如果1:1的冗余度不能抵抗信道的丢包率, 数据包将会被重复
-//
-// 发送。
-func (f *Fudp) SetFEC(p int) *Fudp {
+// SetFEC 设置fec的纠错能力。
+// dataShards, parityShards中必须有一个值是1。
+func (f *Fudp) SetFEC(dataShards, parityShards uint8) error {
+	if dataShards != 1 && parityShards != 1 {
+		return errors.New("xxx")
+	}
+
 	f.setFec = func() {
-		if 1 <= p && p <= 64 {
-			f.groupDataShards = p
-		}
+		f.dataShards = dataShards
+		f.parityShards = parityShards
 	}
-	return f
+	return nil
 }
 
-func (f *Fudp) wrefresh() (hash, gidx uint8, tail bool) {
-	hash = f.groupHash
-	gidx = f.groupIdx
-	if gidx == 0 { // group start
-		f.parityBuff = f.parityBuff[:cap(f.parityBuff)]
-		memset.Memset(f.parityBuff[:f.parityLen+HdrSize], 0)
-		f.parityLen = 0
+func (f *Fudp) wstate() (ghash uint8, tail bool) {
+	if f.groupIdx == 0 && f.setFec != nil {
+		f.setFec()
+		f.setFec = nil
 	}
 
-	f.groupIdx = (f.groupIdx + 1) % uint8(f.groupDataShards)
+	ghash = f.groupInc
+
+	f.groupIdx = (f.groupIdx + 1) % uint8(f.dataShards)
 	if f.groupIdx == 0 { // group end
 		tail = true
-		f.groupHash += 1
+		f.groupInc += 1
 	}
 
-	return hash, gidx, tail
+	return ghash, tail
 }
 
 func (f *Fudp) Write(b []byte) (n int, err error) {
-	n = copy(f.blockBuff[0:], b[0:])
-	defer func() {
-		f.blockBuff = f.blockBuff[:cap(f.blockBuff)]
-		memset.Memset(f.blockBuff[:n+HdrSize], 0)
-	}()
+	var p Upack
+	if cap(b) > len(b)+HdrSize {
+		p = Upack(b[:len(b)+HdrSize])
 
-	ghash, gidx, tail := f.wrefresh()
-	f.blockBuff = f.blockBuff[:n+HdrSize]
-	f.blockBuff.SetGroupHash(ghash)
-	f.blockBuff.SetGROUPIdx(gidx)
-	f.blockBuff.SetFlag(Data)
-
-	// fec
-	if err = f.fecEnc.EncodeIdx(f.blockBuff, int(gidx), [][]byte{f.parityBuff[:len(f.blockBuff)]}); err != nil {
-		return 0, err
 	} else {
-		f.parityLen = max(f.parityLen, len(f.blockBuff))
+		p = Upack(f.blockBuff[:len(b)+HdrSize])
+		copy(p[0:], b[0:])
 	}
+	ghash, tail := f.wstate()
+	p.SetFlag(Data)
+	p.SetGroupInc(ghash)
+	p.SetGroupDataLen(f.dataShards)
 
-	// send
-	if _, err = f.rawConn.Write(f.blockBuff[:HdrSize+n]); err != nil {
-		return 0, err
-	}
-
-	if tail {
-		f.parityBuff = f.parityBuff[:f.parityLen+HdrSize]
-		f.blockBuff.SetGroupHash(ghash)
-		f.blockBuff.SetGROUPIdx(gidx + 1)
-		f.parityBuff.SetFlag(DataGroupTail)
-
-		if _, err = f.rawConn.Write(f.parityBuff); err != nil {
+	if f.dataShards > f.parityShards {
+		// fec; dataShards>1, parityShards==1
+		f.parityBuff = fec.Xor(p, f.parityBuff)
+		if _, err = f.rawConn.Write(p); err != nil {
 			return 0, err
+		}
+
+		if tail {
+			f.parityBuff.SetFlag(DataGroupTail)
+			f.parityBuff.SetGroupInc(ghash)
+			f.parityBuff.SetGroupDataLen(f.dataShards)
+			if _, err = f.rawConn.Write(f.parityBuff); err != nil {
+				return 0, err
+			}
+
+			memset.Memset(f.parityBuff, 0)
+			f.parityBuff = f.parityBuff[:0]
+		}
+	} else {
+		// repeat; dataShards==1; parityShards>=1
+		for i := uint8(0); i < f.dataShards+f.parityShards; i++ {
+
+			if _, err = f.rawConn.Write(p); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return 0, nil
+}
+
+func (s *Fudp) Read(b []byte) (n int, err error) {
+start:
+	if s.fecReFlag {
+		s.fecReFlag = false
+
+		n, err = s.ring.GetGroup(s.fecReGhash).Read(b)
+		if err != nil {
+			return 0, nil
+		} else {
+			s.pl.Stat(Upack(b[:n]).GroupInc())
+			return n - HdrSize, nil
+		}
+	} else {
+
+		if n, err = s.rawConn.Read(b); err != nil {
+			return 0, err
+		} else if n < HdrSize {
+			return 0, errors.New("xxx")
+		}
+
+		p := Upack(b[:n])
+		if p.Flag().HasData() {
+			if p.GroupDataLen() > 1 {
+				rec, skip := s.ring.GetGroup(p.GroupInc()).Do1(p)
+				if rec {
+					s.fecReGhash = p.GroupInc()
+					s.fecReFlag = true
+				}
+
+				if skip {
+					goto start
+				} else {
+					s.pl.Stat(p.GroupInc())
+					return n - HdrSize, nil
+				}
+			} else {
+				// de rep
+				if s.derep.Skip(p.GroupInc()) {
+					goto start
+				}
+
+				s.pl.Stat(p.GroupInc())
+				return n - HdrSize, nil
+			}
+		} else {
+			// do else
+			fmt.Println("do else")
 		}
 	}
 
 	return 0, nil
 }
 
-func max[T int](x, y T) T {
-	if x > y {
-		return x
-	}
-	return y
+// LP loss packet percent, [0,100].
+func (f *Fudp) LP() uint8 {
+	return 0
 }
 
-func (s *Fudp) Read(b []byte) (n int, err error) {
+// Ping RTT delay, milli second.
+func (f *Fudp) Ping() int {
 
-	return
+	return 0
+}
+
+// Speed origin transmit speed, B/s.
+func (f *Fudp) Speed() (up, dn int) {
+	return 0, 0
 }

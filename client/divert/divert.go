@@ -145,7 +145,7 @@ func (d *DATA_FLOW) LocalAddr() netip.AddrPort {
 
 func (d *DATA_FLOW) RemoteAddr() netip.AddrPort {
 	var addr netip.Addr
-	if d.localAddr[1] == 0xffff {
+	if d.remoteAddr[1] == 0xffff {
 		_t := *(*[4]byte)(unsafe.Pointer(&d.remoteAddr[0]))
 
 		// TODO: don't know why, but it's reversed
@@ -155,7 +155,7 @@ func (d *DATA_FLOW) RemoteAddr() netip.AddrPort {
 		addr = netip.AddrFrom16(*(*[16]byte)(unsafe.Pointer(&d.remoteAddr)))
 	}
 
-	return netip.AddrPortFrom(addr, d.LocalPort)
+	return netip.AddrPortFrom(addr, d.RemotePort)
 }
 
 type DATA_SOCKET = DATA_FLOW

@@ -83,7 +83,6 @@ func captureUdp() {
 		u := helper.Ipack(da[:n])
 
 		fmt.Println(u.Laddr().String(), u.Raddr().String())
-
 	}
 
 	return
