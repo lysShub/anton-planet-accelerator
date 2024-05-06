@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lysShub/warthunder/context"
+	"github.com/lysShub/anton-planet-accelerator/context"
 
 	"github.com/stretchr/testify/require"
 )

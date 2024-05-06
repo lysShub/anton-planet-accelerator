@@ -4,8 +4,8 @@ import (
 	"net"
 	"net/netip"
 
-	"github.com/lysShub/warthunder/client/divert"
-	"github.com/lysShub/warthunder/context"
+	"github.com/lysShub/anton-planet-accelerator/context"
+	"github.com/lysShub/divert-go"
 )
 
 /*
