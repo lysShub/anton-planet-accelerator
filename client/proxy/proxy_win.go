@@ -6,10 +6,10 @@ import (
 	"net/netip"
 	"sync"
 
-	"github.com/lysShub/warthunder/client/divert"
-	"github.com/lysShub/warthunder/context"
-	"github.com/lysShub/warthunder/helper"
-	"github.com/lysShub/warthunder/util"
+	"github.com/lysShub/anton-planet-accelerator/context"
+	"github.com/lysShub/anton-planet-accelerator/helper"
+	"github.com/lysShub/anton-planet-accelerator/util"
+	"github.com/lysShub/divert-go"
 )
 
 type proxy struct {
@@ -49,9 +49,9 @@ func newProxy(ctx context.Ctx, pid uint32, proxyConn net.Conn) {
 	if len(ut) > 0 {
 		for _, u := range ut {
 			if u.Connected() {
-				go p.acceptConned(ctx, u.Addr())
+				go p.acceptConned(ctx, u.LocAddr())
 			} else {
-				go p.acceptUnconn(ctx, u.Addr())
+				go p.acceptUnconn(ctx, u.LocAddr())
 			}
 		}
 	}

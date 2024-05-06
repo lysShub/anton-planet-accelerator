@@ -3,13 +3,15 @@ package main
 import (
 	"fmt"
 
-	"github.com/lysShub/warthunder/client/divert"
-	"github.com/lysShub/warthunder/helper"
+	"github.com/lysShub/anton-planet-accelerator/helper"
+	"github.com/lysShub/divert-go"
 
 	"github.com/shirou/gopsutil/process"
 )
 
 func main() {
+
+	//  github.com/lysShub/divert-go@cdad175fca17
 
 	captureUdp()
 	return

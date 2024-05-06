@@ -1,7 +1,6 @@
-package util
+package event
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"net/netip"
@@ -9,37 +8,16 @@ import (
 	"time"
 	"unsafe"
 
+	_ "unsafe"
+
 	"github.com/lxn/win"
-	"github.com/shirou/gopsutil/process"
 	"golang.org/x/sys/windows"
 )
 
-func GetWarThunderPid(ctx context.Context) (int, error) {
-	const warThunderName = "github.com/lysShub/warthunder.exe"
+//go:linkname modiphlpapi golang.org/x/sys/windows.modiphlpapi
+var modiphlpapi *windows.LazyDLL
 
-	for {
-		ps, err := process.Processes()
-		if err != nil {
-			return 0, err
-		}
-
-		for _, p := range ps {
-			if n, err := p.Name(); err != nil {
-				continue
-			} else if n == warThunderName {
-				return int(p.Pid), nil
-			}
-		}
-
-		select {
-		case <-ctx.Done():
-			return 0, ctx.Err()
-		default:
-		}
-
-		time.Sleep(time.Millisecond * 250)
-	}
-}
+var getExtendedUdpTableProc = modiphlpapi.NewProc("GetExtendedUdpTable")
 
 const TCPIP_OWNING_MODULE_SIZE = 16
 
@@ -53,19 +31,19 @@ type MIB_UDPROW_OWNER_MODULE struct {
 	owningModuleInfo [TCPIP_OWNING_MODULE_SIZE]uint64
 }
 
-func (r *MIB_UDPROW_OWNER_MODULE) Addr() netip.AddrPort {
-	return netip.AddrPortFrom(r.localAddr(), r.localPort())
+func (r *MIB_UDPROW_OWNER_MODULE) LocAddr() netip.AddrPort {
+	return netip.AddrPortFrom(r.locAddr(), r.locPort())
 }
 
-func (r *MIB_UDPROW_OWNER_MODULE) localAddr() netip.Addr {
+func (r *MIB_UDPROW_OWNER_MODULE) locAddr() netip.Addr {
 	return netip.AddrFrom4(*(*[4]byte)(unsafe.Pointer(&r.dwLocalAddr)))
 }
 
-func (r *MIB_UDPROW_OWNER_MODULE) localPort() uint16 {
+func (r *MIB_UDPROW_OWNER_MODULE) locPort() uint16 {
 	return uint16(r.dwLocalPort)
 }
 
-func (r *MIB_UDPROW_OWNER_MODULE) OwningPid() uint32 {
+func (r *MIB_UDPROW_OWNER_MODULE) OwnerPid() uint32 {
 	return r.dwOwningPid
 }
 
@@ -108,15 +86,12 @@ func newUDPTable(byte int) *MIB_UDPTABLE_OWNER_MODULE {
 		return nil
 	}
 
-	var _t = make([]MIB_UDPROW_OWNER_MODULE, n)
+	var s = make([]MIB_UDPROW_OWNER_MODULE, n)
 	return &MIB_UDPTABLE_OWNER_MODULE{
 		dwNumEntries: uint32(n),
-		table:        *(*[0]MIB_UDPROW_OWNER_MODULE)(unsafe.Pointer(&_t[0])),
+		table:        *(*[0]MIB_UDPROW_OWNER_MODULE)(unsafe.Pointer(&s[0])),
 	}
 }
-
-var iphlpapi = windows.NewLazySystemDLL("iphlpapi.dll")
-var getExtendedUdpTableProc = iphlpapi.NewProc("GetExtendedUdpTable")
 
 // TODO: support IPv6
 func GetExtendedUdpTable() (*MIB_UDPTABLE_OWNER_MODULE, error) {
@@ -163,7 +138,7 @@ func GetUDPTableByPid(pid uint32) ([]MIB_UDPROW_OWNER_MODULE, error) {
 	var rows []MIB_UDPROW_OWNER_MODULE
 	for i := 0; i < int(t.dwNumEntries); i++ {
 		row := t.GetTable(i)
-		if row.OwningPid() == pid {
+		if row.OwnerPid() == pid {
 			rows = append(rows, *row)
 		}
 	}

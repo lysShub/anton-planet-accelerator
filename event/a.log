@@ -1,0 +1,157 @@
+C:\Users\lys>trace -c -v netstat -anp udp
+
+wtrace v3.4.2416.12 - collects process or system traces
+Copyright (C) 2022 Sebastian Solnica (wtrace.net)
+Visit https://wtrace.net to learn more
+
+HANDLERS
+  file, image, process, rpc, tcp, udp
+
+Starting the tracing session (might take a moment). Press Ctrl + C to exit.
+WTrace.ETW.Tracing Information: 0 : [etw] Starting main ETW session
+WTrace.ETW.Tracing Information: 0 : [etw] Starting rundown session wtrace-rt_rundown
+WTrace.Tracing Information: 0 : [filter] including process NETSTAT (16616)
+WTrace.Tracing Information: 0 : [filter] including process NETSTAT (16616)
+WTrace.ETW.Tracing Information: 0 : [etw] Rundown session finished
+
+活动连接
+
+  协议  本地地址          外部地址        状态
+  UDP    0.0.0.0:53             *:*
+  UDP    0.0.0.0:53             *:*
+  UDP    0.0.0.0:500            *:*
+  UDP    0.0.0.0:522            *:*
+  UDP    0.0.0.0:3389           *:*
+  UDP    0.0.0.0:4020           *:*
+  UDP    0.0.0.0:4500           *:*
+  UDP    0.0.0.0:5050           *:*
+  UDP    0.0.0.0:5353           *:*
+  UDP    0.0.0.0:5353           *:*
+  UDP    0.0.0.0:5353           *:*
+  UDP    0.0.0.0:5353           *:*
+  UDP    0.0.0.0:5353           *:*
+  UDP    0.0.0.0:5353           *:*
+  UDP    0.0.0.0:5353           *:*
+  UDP    0.0.0.0:5355           *:*
+  UDP    0.0.0.0:49665          *:*
+  UDP    0.0.0.0:51019          *:*
+  UDP    0.0.0.0:51817          *:*
+  UDP    0.0.0.0:52074          89.149.224.35:20010
+  UDP    0.0.0.0:56114          *:*
+  UDP    0.0.0.0:57785          *:*
+  UDP    0.0.0.0:59700          *:*
+  UDP    0.0.0.0:59701          *:*
+  UDP    0.0.0.0:60922          *:*
+  UDP    0.0.0.0:61963          *:*
+  UDP    0.0.0.0:61964          *:*
+  UDP    127.0.0.1:520          *:*
+  UDP    127.0.0.1:1900         *:*
+  UDP    127.0.0.1:49664        127.0.0.1:49664
+  UDP    127.0.0.1:49671        *:*
+  UDP    127.0.0.1:57121        *:*
+  UDP    127.0.0.1:58537        *:*
+  UDP    127.0.0.1:58538        *:*
+  UDP    127.0.0.1:61856        *:*
+  UDP    127.0.0.1:61857        *:*
+  UDP    127.0.0.1:61858        *:*
+  UDP    127.0.0.1:61859        *:*
+  UDP    127.0.0.1:61860        *:*
+  UDP    127.0.0.1:61861        *:*
+  UDP    127.0.0.1:65285        *:*
+  UDP    172.24.224.1:67        *:*
+  UDP    172.24.224.1:68        *:*
+  UDP    172.24.224.1:1900      *:*
+  UDP    172.24.224.1:65286     *:*
+  UDP    172.25.32.1:1900       *:*
+  UDP    172.25.32.1:49670      *:*
+  UDP    172.25.32.1:65287      *:*
+  UDP    192.168.0.107:5657     *:*
+  UDP    192.168.0.107:57422    *:*
+  UDP    192.168.0.111:137      *:*
+  UDP    192.168.0.111:138      *:*
+  UDP    192.168.0.111:1900     *:*
+  UDP    192.168.0.111:65284    *:*
+Process (16616) exited.
+16:47:13.2505 NETSTAT (16616.4720) Image/Load 'C:\Windows\System32\NETSTAT.EXE' base: 0x7ff7bd580000
+16:47:13.2507 NETSTAT (16616.4720) Image/Load 'C:\Windows\System32\ntdll.dll' base: 0x7ffb11130000
+16:47:13.2512 NETSTAT (16616.4720) FileIO/Create 'C:\Users\lys\' disposition: OPEN_EXISTING, options: 0x21 -> SUCCESS
+16:47:13.2513 NETSTAT (16616.4720) Image/Load 'C:\Windows\System32\kernel32.dll' base: 0x7ffb0fb90000
+16:47:13.2513 NETSTAT (16616.4720) Image/Load 'C:\Windows\System32\KernelBase.dll' base: 0x7ffb0e5b0000
+16:47:13.2524 NETSTAT (16616.4720) Image/Load 'C:\Windows\System32\msvcrt.dll' base: 0x7ffb0f0e0000
+16:47:13.2525 NETSTAT (16616.5356) Thread/Start
+16:47:13.2525 NETSTAT (16616.4720) Image/Load 'C:\Windows\System32\nsi.dll' base: 0x7ffb0f010000
+16:47:13.2526 NETSTAT (16616.14976) Thread/Start
+16:47:13.2526 NETSTAT (16616.4720) Image/Load 'C:\Windows\System32\ws2_32.dll' base: 0x7ffb0f190000
+16:47:13.2526 NETSTAT (16616.17248) Thread/Start
+16:47:13.2527 NETSTAT (16616.4720) Image/Load 'C:\Windows\System32\rpcrt4.dll' base: 0x7ffb0f5a0000
+16:47:13.2527 NETSTAT (16616.5356) FileIO/Create 'C:\WINDOWS\system32\IPHLPAPI.DLL' disposition: OPEN_EXISTING, options: 0x200000 -> SUCCESS
+16:47:13.2527 NETSTAT (16616.5356) FileIO/QueryInfo 'C:\WINDOWS\system32\IPHLPAPI.DLL' class info: 0x4 -> SUCCESS
+16:47:13.2527 NETSTAT (16616.5356) FileIO/Cleanup 'C:\WINDOWS\system32\IPHLPAPI.DLL' -> SUCCESS
+16:47:13.2528 NETSTAT (16616.5356) FileIO/Close 'C:\WINDOWS\system32\IPHLPAPI.DLL' -> SUCCESS
+16:47:13.2528 NETSTAT (16616.5356) FileIO/Create 'C:\WINDOWS\system32\IPHLPAPI.DLL' disposition: OPEN_EXISTING, options: 0x60 -> SUCCESS
+16:47:13.2528 NETSTAT (16616.14976) FileIO/Create 'C:\WINDOWS\system32\snmpapi.dll' disposition: OPEN_EXISTING, options: 0x200000 -> SUCCESS
+16:47:13.2528 NETSTAT (16616.14976) FileIO/QueryInfo 'C:\WINDOWS\system32\snmpapi.dll' class info: 0x4 -> SUCCESS
+16:47:13.2528 NETSTAT (16616.14976) FileIO/Cleanup 'C:\WINDOWS\system32\snmpapi.dll' -> SUCCESS
+16:47:13.2528 NETSTAT (16616.14976) FileIO/Close 'C:\WINDOWS\system32\snmpapi.dll' -> SUCCESS
+16:47:13.2528 NETSTAT (16616.14976) FileIO/Create 'C:\WINDOWS\system32\snmpapi.dll' disposition: OPEN_EXISTING, options: 0x60 -> SUCCESS
+16:47:13.2529 NETSTAT (16616.5356) Image/Load 'C:\Windows\System32\IPHLPAPI.DLL' base: 0x7ffb0cf50000
+16:47:13.2529 NETSTAT (16616.14976) Image/Load 'C:\Windows\System32\snmpapi.dll' base: 0x7ffadca50000
+16:47:13.2530 NETSTAT (16616.5356) FileIO/Cleanup 'C:\WINDOWS\system32\IPHLPAPI.DLL' -> SUCCESS
+16:47:13.2530 NETSTAT (16616.5356) FileIO/Close 'C:\WINDOWS\system32\IPHLPAPI.DLL' -> SUCCESS
+16:47:13.2530 NETSTAT (16616.14976) FileIO/Cleanup 'C:\WINDOWS\system32\snmpapi.dll' -> SUCCESS
+16:47:13.2530 NETSTAT (16616.14976) FileIO/Close 'C:\WINDOWS\system32\snmpapi.dll' -> SUCCESS
+16:47:13.2534 NETSTAT (16616.4720) FileIO/QueryInfo '<0xFFFF950958EB3C60>' class info: 0x9 -> SUCCESS
+
+16:47:13.2547 NETSTAT (16616.4720) FileIO/Create 'C:\WINDOWS\system32\inetmib1.dll' disposition: OPEN_EXISTING, options: 0x200000 -> SUCCESS
+16:47:13.2547 NETSTAT (16616.4720) FileIO/QueryInfo 'C:\WINDOWS\system32\inetmib1.dll' class info: 0x4 -> SUCCESS
+16:47:13.2547 NETSTAT (16616.4720) FileIO/Cleanup 'C:\WINDOWS\system32\inetmib1.dll' -> SUCCESS
+16:47:13.2547 NETSTAT (16616.4720) FileIO/Close 'C:\WINDOWS\system32\inetmib1.dll' -> SUCCESS
+16:47:13.2547 NETSTAT (16616.4720) FileIO/Create 'C:\WINDOWS\system32\inetmib1.dll' disposition: OPEN_EXISTING, options: 0x60 -> SUCCESS
+16:47:13.2548 NETSTAT (16616.4720) Image/Load 'C:\Windows\System32\inetmib1.dll' base: 0x7ffae8590000
+16:47:13.2549 NETSTAT (16616.4720) FileIO/Cleanup 'C:\WINDOWS\system32\inetmib1.dll' -> SUCCESS
+16:47:13.2549 NETSTAT (16616.4720) FileIO/Close 'C:\WINDOWS\system32\inetmib1.dll' -> SUCCESS
+
+16:47:13.2582 NETSTAT (16616.4720) FileIO/Read 'C:\Windows\System32\config\SOFTWARE' offset: 50958336, size: 32768 -> SUCCESS
+16:47:13.2586 NETSTAT (16616.4720) FileIO/Create 'C:\Program Files\WindowsApps\Microsoft.LanguageExperiencePackzh-CN_22621.41.188.0_neutral__8wekyb3d8bbwe\Windows\system32\zh-CN\bffc5780beff43a5fc391b6a0d6c9049\netstat.exe.mui' disposition: OPEN_EXISTING, options: 0x60 -> SUCCESS
+16:47:13.2587 NETSTAT (16616.4720) FileIO/QueryInfo 'C:\Program Files\WindowsApps\Microsoft.LanguageExperiencePackzh-CN_22621.41.188.0_neutral__8wekyb3d8bbwe\Windows\system32\zh-CN\bffc5780beff43a5fc391b6a0d6c9049\netstat.exe.mui' class info: 0x5 -> SUCCESS
+16:47:13.2599 NETSTAT (16616.4720) FileIO/Create 'C:\WINDOWS\system32\mswsock.dll' disposition: OPEN_EXISTING, options: 0x200000 -> SUCCESS
+16:47:13.2599 NETSTAT (16616.4720) FileIO/QueryInfo 'C:\WINDOWS\system32\mswsock.dll' class info: 0x4 -> SUCCESS
+16:47:13.2599 NETSTAT (16616.4720) FileIO/Cleanup 'C:\WINDOWS\system32\mswsock.dll' -> SUCCESS
+16:47:13.2599 NETSTAT (16616.4720) FileIO/Close 'C:\WINDOWS\system32\mswsock.dll' -> SUCCESS
+16:47:13.2599 NETSTAT (16616.4720) FileIO/Create 'C:\WINDOWS\system32\mswsock.dll' disposition: OPEN_EXISTING, options: 0x60 -> SUCCESS
+16:47:13.2601 NETSTAT (16616.4720) Image/Load 'C:\Windows\System32\mswsock.dll' base: 0x7ffb0d9c0000
+16:47:13.2602 NETSTAT (16616.4720) FileIO/Cleanup 'C:\WINDOWS\system32\mswsock.dll' -> SUCCESS
+16:47:13.2602 NETSTAT (16616.4720) FileIO/Close 'C:\WINDOWS\system32\mswsock.dll' -> SUCCESS
+16:47:13.3122 NETSTAT (16616.17248) Thread/Stop
+16:47:13.3122 NETSTAT (16616.14976) Thread/Stop
+16:47:13.3122 NETSTAT (16616.5356) Thread/Stop
+16:47:13.3123 NETSTAT (16616.4720) Thread/Stop
+16:47:13.3124 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\NETSTAT.EXE' base: 0x7ff7bd580000
+16:47:13.3124 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\snmpapi.dll' base: 0x7ffadca50000
+16:47:13.3124 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\inetmib1.dll' base: 0x7ffae8590000
+16:47:13.3124 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\IPHLPAPI.DLL' base: 0x7ffb0cf50000
+16:47:13.3124 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\mswsock.dll' base: 0x7ffb0d9c0000
+16:47:13.3124 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\KernelBase.dll' base: 0x7ffb0e5b0000
+16:47:13.3124 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\nsi.dll' base: 0x7ffb0f010000
+16:47:13.3124 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\msvcrt.dll' base: 0x7ffb0f0e0000
+16:47:13.3125 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\ws2_32.dll' base: 0x7ffb0f190000
+16:47:13.3125 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\rpcrt4.dll' base: 0x7ffb0f5a0000
+16:47:13.3125 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\kernel32.dll' base: 0x7ffb0fb90000
+16:47:13.3125 NETSTAT (16616.-1) Image/Unload 'C:\Windows\System32\ntdll.dll' base: 0x7ffb11130000
+16:47:13.3125  (16616.-1) Process/Stop command line: 'netstat -anp udp' -> SUCCESS
+16:47:13.3126  (16616.4720) FileIO/Cleanup 'C:\Users\lys\' -> SUCCESS
+16:47:13.3126  (16616.4720) FileIO/Close 'C:\Users\lys\' -> SUCCESS
+16:47:13.3127  (16616.4720) FileIO/Cleanup 'C:\Program Files\WindowsApps\Microsoft.LanguageExperiencePackzh-CN_22621.41.188.0_neutral__8wekyb3d8bbwe\Windows\system32\zh-CN\bffc5780beff43a5fc391b6a0d6c9049\netstat.exe.mui' -> SUCCESS
+16:47:13.3127  (16616.4720) FileIO/Close 'C:\Program Files\WindowsApps\Microsoft.LanguageExperiencePackzh-CN_22621.41.188.0_neutral__8wekyb3d8bbwe\Windows\system32\zh-CN\bffc5780beff43a5fc391b6a0d6c9049\netstat.exe.mui' -> SUCCESS
+16:47:13.3132  (16616.4720) FileIO/Close '<0xFFFF95094C7DC180>' -> SUCCESS
+WTrace.ETW.Tracing Information: 0 : [etw] Main ETW session completed
+
+--------------------------------
+           Processes
+--------------------------------
+├─ NETSTAT [16616]   finished at 16:47:13.3125
+
+--------------------------------
+            File I/O
+--------------------------------
+'C:\Windows\System32\config\SOFTWARE' Total: 32768B, Writes: 0B, Reads: 32768B
