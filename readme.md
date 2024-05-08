@@ -1,8 +1,4 @@
+弃用，似乎太复杂了
 
-Building...
-
-anton planet accelerator
-
-安东星加速器
-
-
+ref:
+ https://help.aliyun.com/zh/ecs/classic-network-under-different-areas-between-ecs-examples-of-how-to-build-ipip-tunnel
