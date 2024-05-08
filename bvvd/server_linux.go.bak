@@ -1,0 +1,99 @@
+package bvvd
+
+import (
+	"fmt"
+	"net"
+	"net/netip"
+	"sync"
+
+	"github.com/lysShub/anton-planet-accelerator/bvvd/ports"
+	"github.com/lysShub/netkit/packet"
+	"github.com/pkg/errors"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+)
+
+type Server struct {
+	validator interface{ Validate(header.IPv4) bool }
+	ap        *ports.Adapter
+
+	conn    *net.IPConn
+	connsMu sync.RWMutex
+	conns   map[netip.Addr]struct{}
+
+	senders map[netip.Addr]*net.IPConn
+
+	/*
+
+		上行： 根据src ip 判断是否是新的client, 新的需要validate, 判断dst-ip 是否被监听，没有监听则需要启动一个新的服务。
+				然后根据dst ip-port 判断是否是新的session， 新的需要分配本地端口， 改变src ip-port, 然后发送ip包
+
+		下行：根据dst ip-port获取原始的client ip-port, 然后encode后通过s.l发送
+
+	*/
+}
+
+func NewServer(laddr netip.Addr) (*Server, error) {
+	var s = &Server{
+		ap: ports.NewAdapter(laddr),
+	}
+	var err error
+
+	if s.conn, err = net.ListenIP(
+		"ip4:ipip", &net.IPAddr{IP: laddr.AsSlice()},
+	); err != nil {
+		return nil, s.close(err)
+	}
+
+	return s, nil
+}
+
+func (s *Server) close(cause error) error {
+	return cause
+}
+
+func (s *Server) uplinkService() error {
+	var ipip = packet.Make(0, 1536)
+	for {
+		n, err := s.conn.Read(ipip.Sets(0, 0xffff).Bytes())
+		if err != nil {
+			return s.close(errors.WithStack(err))
+		}
+
+		hdr := header.IPv4(ipip.SetData(n).Bytes())
+		if hdr.TotalLength() != uint16(n) {
+			fmt.Println("truncate ip")
+			continue
+		}
+		s.connsMu.RLock()
+		_, has := s.conns[netip.AddrFrom4(hdr.SourceAddress().As4())]
+		s.connsMu.RUnlock()
+		if !has {
+			if s.validator != nil && !s.validator.Validate(hdr) {
+				fmt.Println("not accept")
+				continue
+			}
+			// add reocord
+		}
+
+		if _, err := Decode(ipip); err != nil {
+			fmt.Println("decode", err)
+			continue
+		}
+
+		ip := header.IPv4(hdr.Payload())
+		if ip.TotalLength() != uint16(len(ip)) {
+			fmt.Println("truncate inner ip")
+			continue
+		}
+
+	}
+}
+
+func (s *Server) sendService(addr sendkey) error {
+	return nil
+}
+
+type sendkey struct {
+	server netip.AddrPort
+	proto  uint8
+}

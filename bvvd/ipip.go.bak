@@ -1,0 +1,64 @@
+package bvvd
+
+import (
+	"net/netip"
+
+	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/test"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+)
+
+func Encode(ip *packet.Packet, dst netip.Addr) (err error) {
+
+	origin := header.IPv4(ip.Bytes())
+	if ver := header.IPVersion(origin); ver != 4 {
+		return errors.Errorf("not support ip version %d", ver)
+	}
+	if debug.Debug() {
+		test.ValidIP(test.T(), ip.Bytes())
+	}
+
+	// client是对的， proxyer 的 src-ip 不对
+
+	ip.AppendN(header.IPv4MinimumSize)
+	copy(ip.Bytes(), origin[:header.IPv4MinimumSize])
+	ipip := header.IPv4(ip.Bytes())
+	ipip.SetDestinationAddress(tcpip.AddrFrom4(dst.As4()))
+	ipip.SetHeaderLength(header.IPv4MinimumSize)
+	ipip.SetTotalLength(ipip.TotalLength() + header.IPv4MinimumSize)
+	ipip[protocol] = IPPROTO_IPIP
+	if debug.Debug() {
+		require.Equal(test.T(), IPPROTO_IPIP, ipip.Protocol())
+	}
+
+	ipip.SetChecksum(^ipip.CalculateChecksum())
+	return nil
+}
+
+const (
+	protocol     = 9
+	IPPROTO_IPIP = 4
+)
+
+func Decode(ipip *packet.Packet) (from netip.Addr, err error) {
+	origin := header.IPv4(ipip.Bytes())
+	if ver := header.IPVersion(origin); ver != 4 {
+		return netip.Addr{}, errors.Errorf("not support ip version %d", ver)
+	} else if origin.Protocol() != IPPROTO_IPIP {
+		return netip.Addr{}, errors.Errorf("not support protocol %d", ver)
+	}
+	if debug.Debug() {
+		require.True(test.T(), header.IPv4(ipip.Bytes()).IsChecksumValid())
+	}
+
+	from = netip.AddrFrom4(header.IPv4(ipip.Bytes()).SourceAddress().As4())
+	ipip.SetHead(ipip.Head() + int(origin.HeaderLength()))
+	if debug.Debug() {
+		test.ValidIP(test.T(), ipip.Bytes())
+	}
+	return from, nil
+}
