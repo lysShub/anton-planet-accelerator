@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"sync/atomic"
+	"time"
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/netkit/debug"
@@ -35,8 +36,9 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// const warthunder = "aces.exe"
-const warthunder = "sokit.exe"
+const warthunder = "aces.exe"
+
+// const warthunder = "sokit.exe"
 
 type Client struct {
 	local  netip.Addr
@@ -46,13 +48,13 @@ type Client struct {
 
 	client *socks5.Client
 
-	capture *divert.Handle
-	inbound divert.Address
-	mapping process.Mapping
+	capture     *divert.Handle
+	inboundAddr divert.Address
+	mapping     process.Mapping
 
-	stack     *stack.Stack
-	link      *channel.Endpoint
-	inboundCh chan *stack.PacketBuffer
+	stack        *stack.Stack
+	link         *channel.Endpoint
+	udpInboundCh chan *stack.PacketBuffer
 
 	srvCtx   context.Context
 	cancel   context.CancelFunc
@@ -71,8 +73,8 @@ func NewClient(server netip.AddrPort) (*Client, error) {
 		return nil, s.close(errors.New("no internet connection"))
 	}
 	s.local = table[0].Addr
-	s.inbound.SetOutbound(false)
-	s.inbound.Network().IfIdx = table[0].Interface
+	s.inboundAddr.SetOutbound(false)
+	s.inboundAddr.Network().IfIdx = table[0].Interface
 
 	s.client, err = socks5.NewClient(server.String(), "", "", 30, 30)
 	if err != nil {
@@ -112,7 +114,7 @@ func NewClient(server netip.AddrPort) (*Client, error) {
 	s.stack.SetTransportProtocolHandler(
 		udp.ProtocolNumber, udp.NewForwarder(s.stack, s.handleUDPConnect).HandlePacket, // udp HandlePacket is sync block
 	)
-	s.inboundCh = make(chan *stack.PacketBuffer, 16)
+	s.udpInboundCh = make(chan *stack.PacketBuffer, 256)
 
 	go s.captrueService()
 	go s.inboundServic()
@@ -192,46 +194,72 @@ func (c *Client) captrueService() error {
 			continue
 		}
 
-		pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: buffer.MakeWithData(ip),
-		})
-		select {
-		case c.inboundCh <- pkb:
-		case <-c.srvCtx.Done():
-			return c.close(c.srvCtx.Err())
+		test.CalcChecksum(ip)
+		var t header.UDP
+		switch ip.Protocol() {
+		case windows.IPPROTO_UDP, windows.IPPROTO_TCP:
+			t = header.UDP(ip.Payload())
 		default:
-			pkb.DecRef()
-			c.logger.Warn("inboundCh filled", errorx.Trace(nil))
+			c.close(errors.Errorf("capture not support protocol %d", ip.Protocol()))
 		}
+		reversal(ip, t)
+		if debug.Debug() {
+			test.ValidIP(test.T(), ip)
+		}
+
+		if ip.Protocol() == windows.IPPROTO_TCP {
+			pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: buffer.MakeWithData(ip),
+			})
+			c.link.InjectInbound(header.IPv4ProtocolNumber, pkb)
+		} else {
+			pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: buffer.MakeWithData(ip),
+			})
+
+			for loop := true; loop; {
+				select {
+				case c.udpInboundCh <- pkb:
+					loop = false
+				case <-c.srvCtx.Done():
+					return c.close(c.srvCtx.Err())
+				default:
+					old := <-c.udpInboundCh
+					old.DecRef()
+					c.logger.Warn("inboundCh filled", errorx.Trace(nil), slog.String("len", strconv.Itoa(len(c.udpInboundCh))))
+				}
+			}
+		}
+
 	}
 }
 func (c *Client) inboundServic() error {
 	var pkb *stack.PacketBuffer
 	for {
 		select {
-		case pkb = <-c.inboundCh:
+		case pkb = <-c.udpInboundCh:
 		case <-c.srvCtx.Done():
 			return c.close(c.srvCtx.Err())
 		}
 
-		ip := header.IPv4(pkb.AsSlices()[0])
-		test.CalcChecksum(ip) // TX checksum offload
-		if debug.Debug() {
-			test.ValidIP(test.T(), ip)
-		}
-
-		var t header.UDP
-		switch ip.Protocol() {
-		case windows.IPPROTO_UDP, windows.IPPROTO_TCP:
-			t = header.UDP(ip.Payload())
-		default:
-			return c.close(errors.Errorf("capture not support protocol %d", ip.Protocol()))
-		}
-		reversal(ip, t)
+		// ip := header.IPv4(pkb.AsSlices()[0])
+		// test.CalcChecksum(ip) // TX checksum offload
+		// if debug.Debug() {
+		// 	test.ValidIP(test.T(), ip)
+		// }
+		// var t header.UDP
+		// switch ip.Protocol() {
+		// case windows.IPPROTO_UDP, windows.IPPROTO_TCP:
+		// 	t = header.UDP(ip.Payload())
+		// default:
+		// 	return c.close(errors.Errorf("capture not support protocol %d", ip.Protocol()))
+		// }
+		// reversal(ip, t)
 
 		c.link.InjectInbound(header.IPv4ProtocolNumber, pkb)
 	}
 }
+
 func (c *Client) ouboundServic() error {
 	var ip = make(header.IPv4, 1536)
 	for {
@@ -255,7 +283,7 @@ func (c *Client) ouboundServic() error {
 		if debug.Debug() {
 			test.ValidIP(test.T(), ip)
 		}
-		_, err := c.capture.Send(ip, &c.inbound)
+		_, err := c.capture.Send(ip, &c.inboundAddr)
 		if err != nil {
 			return c.close(err)
 		}
@@ -284,25 +312,30 @@ func (c *Client) handleTCPConnect(fr *tcp.ForwarderRequest) {
 		c.logger.Warn(err.String(), errorx.Trace(nil))
 		return
 	}
-	defer fr.Complete(false)
+	// defer fr.Complete(false)
 
 	uconn := gonet.NewTCPConn(&wq, ep)
 
 	id := fr.ID()
 	dst := net.JoinHostPort(id.RemoteAddress.String(), strconv.Itoa(int(id.RemotePort)))
+	start := time.Now()
 	pconn, e := c.client.Dial("tcp", dst)
 	if e != nil {
-		ep.Close()
+		// ep.Close()
 		fr.Complete(true)
 		c.logger.Warn(e.Error(), errorx.Trace(nil))
 		return
 	}
+	fmt.Println("dial udp", time.Since(start))
 
 	go pipe(uconn, pconn, c.mtu)
 	go pipe(pconn, uconn, c.mtu)
 }
 
+var ids = map[stack.TransportEndpointID]bool{}
+
 func (c *Client) handleUDPConnect(fr *udp.ForwarderRequest) {
+
 	var wq waiter.Queue
 	ep, err := fr.CreateEndpoint(&wq)
 	if err != nil {
@@ -313,13 +346,24 @@ func (c *Client) handleUDPConnect(fr *udp.ForwarderRequest) {
 	uconn := gonet.NewUDPConn(c.stack, &wq, ep)
 
 	id := fr.ID()
+
 	dst := net.JoinHostPort(id.RemoteAddress.String(), strconv.Itoa(int(id.RemotePort)))
+	str := fmt.Sprintln("udp ", net.JoinHostPort(id.LocalAddress.String(), strconv.Itoa(int(id.LocalPort))), dst)
+	if ids[id] {
+		fmt.Println("重复", str)
+	} else {
+		ids[id] = true
+		fmt.Println(str)
+	}
+
+	start := time.Now()
 	pconn, e := c.client.Dial("udp", dst)
 	if e != nil {
 		ep.Close()
 		c.logger.Warn(e.Error(), errorx.Trace(nil))
 		return
 	}
+	fmt.Println("dial udp", time.Since(start))
 
 	go pipe(uconn, pconn, c.mtu)
 	go pipe(pconn, uconn, c.mtu)
