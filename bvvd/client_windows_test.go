@@ -18,7 +18,7 @@ func TestXxxxx(t *testing.T) {
 	divert.MustLoad(divert.DLL)
 	defer divert.Release()
 
-	c, err := NewClient(netip.MustParseAddrPort("172.24.131.26:8080"))
+	c, err := NewClient(netip.MustParseAddrPort("8.137.91.200:8080"))
 	require.NoError(t, err)
 
 	time.Sleep(time.Hour)

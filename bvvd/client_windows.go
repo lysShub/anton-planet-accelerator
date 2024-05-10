@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/mapping/process"
@@ -51,8 +50,9 @@ type Client struct {
 	inbound divert.Address
 	mapping process.Mapping
 
-	stack *stack.Stack
-	link  *channel.Endpoint
+	stack     *stack.Stack
+	link      *channel.Endpoint
+	inboundCh chan *stack.PacketBuffer
 
 	srvCtx   context.Context
 	cancel   context.CancelFunc
@@ -79,8 +79,7 @@ func NewClient(server netip.AddrPort) (*Client, error) {
 		return nil, s.close(err)
 	}
 
-	var filter = "outbound and !loopback and ip and (tcp or udp)"
-	// var filter = fmt.Sprintf("outbound and !loopback and ip and ifIdx=%d and (tcp or udp)", table[0].Interface)
+	var filter = fmt.Sprintf("outbound and !loopback and ip and ifIdx=%d and (tcp or udp)", table[0].Interface)
 	s.capture, err = divert.Open(filter, divert.Network, 0, 0)
 	if err != nil {
 		return nil, s.close(err)
@@ -111,9 +110,11 @@ func NewClient(server netip.AddrPort) (*Client, error) {
 		tcp.ProtocolNumber, tcp.NewForwarder(s.stack, 0xffff, 4096, s.handleTCPConnect).HandlePacket,
 	)
 	s.stack.SetTransportProtocolHandler(
-		udp.ProtocolNumber, udp.NewForwarder(s.stack, s.handleUDPConnect).HandlePacket,
+		udp.ProtocolNumber, udp.NewForwarder(s.stack, s.handleUDPConnect).HandlePacket, // udp HandlePacket is sync block
 	)
+	s.inboundCh = make(chan *stack.PacketBuffer, 16)
 
+	go s.captrueService()
 	go s.inboundServic()
 	go s.ouboundServic()
 	return s, nil
@@ -150,7 +151,7 @@ func (c *Client) close(cause error) error {
 	return *c.closeErr.Load()
 }
 
-func (c *Client) inboundServic() error {
+func (c *Client) captrueService() error {
 	var ip = make(header.IPv4, 1536)
 	var addr divert.Address
 	for {
@@ -163,47 +164,71 @@ func (c *Client) inboundServic() error {
 		ip = ip[:n]
 
 		var src netip.AddrPort
-		var t header.UDP
 		switch ip.Protocol() {
 		case windows.IPPROTO_UDP, windows.IPPROTO_TCP:
-			t = header.UDP(ip.Payload())
 			src = netip.AddrPortFrom(
-				netip.AddrFrom4(ip.SourceAddress().As4()), t.SourcePort(),
+				netip.AddrFrom4(ip.SourceAddress().As4()), header.UDP(ip.Payload()).SourcePort(),
 			)
 		default:
 			return c.close(errors.Errorf("capture not support protocol %d", ip.Protocol()))
 		}
 
-		if t.DestinationPort() == 8080 {
-			s := session.FromIP(ip).String()
-			println(s, addr.Network().IfIdx)
-		}
-
+		pass := false
 		name, err := c.mapping.Name(src, ip.Protocol())
 		if err != nil {
 			if errorx.Temporary(err) {
 				c.logger.Warn(err.Error(), errorx.Trace(nil))
-				if _, err = c.capture.Send(ip, &addr); err != nil {
-					return c.close(err)
-				}
-				continue
+				pass = true
+			} else {
+				return c.close(err)
 			}
-			return c.close(err)
-		} else if name != warthunder {
+		} else {
+			pass = name != warthunder
+		}
+		if pass {
 			if _, err = c.capture.Send(ip, &addr); err != nil {
 				return c.close(err)
 			}
 			continue
 		}
 
-		test.CalcChecksum(ip) // maybe TX checksum offload
-		if debug.Debug() {
-			test.ValidIP(test.T(), ip)
-		}
-		reversal(ip, t)
 		pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: buffer.MakeWithData(ip),
 		})
+		select {
+		case c.inboundCh <- pkb:
+		case <-c.srvCtx.Done():
+			return c.close(c.srvCtx.Err())
+		default:
+			pkb.DecRef()
+			c.logger.Warn("inboundCh filled", errorx.Trace(nil))
+		}
+	}
+}
+func (c *Client) inboundServic() error {
+	var pkb *stack.PacketBuffer
+	for {
+		select {
+		case pkb = <-c.inboundCh:
+		case <-c.srvCtx.Done():
+			return c.close(c.srvCtx.Err())
+		}
+
+		ip := header.IPv4(pkb.AsSlices()[0])
+		test.CalcChecksum(ip) // TX checksum offload
+		if debug.Debug() {
+			test.ValidIP(test.T(), ip)
+		}
+
+		var t header.UDP
+		switch ip.Protocol() {
+		case windows.IPPROTO_UDP, windows.IPPROTO_TCP:
+			t = header.UDP(ip.Payload())
+		default:
+			return c.close(errors.Errorf("capture not support protocol %d", ip.Protocol()))
+		}
+		reversal(ip, t)
+
 		c.link.InjectInbound(header.IPv4ProtocolNumber, pkb)
 	}
 }
@@ -214,7 +239,6 @@ func (c *Client) ouboundServic() error {
 		if pkb == nil {
 			return c.close(c.srvCtx.Err())
 		}
-
 		ip = ip[:0]
 		for _, e := range pkb.AsSlices() {
 			ip = append(ip, e...)
@@ -229,10 +253,8 @@ func (c *Client) ouboundServic() error {
 		reversal(ip, header.UDP(ip.Payload()))
 
 		if debug.Debug() {
-			s := session.FromIP(ip).String()
-			fmt.Println(s)
+			test.ValidIP(test.T(), ip)
 		}
-
 		_, err := c.capture.Send(ip, &c.inbound)
 		if err != nil {
 			return c.close(err)
@@ -248,15 +270,13 @@ func reversal(ip header.IPv4, t header.UDP) {
 	sport, dport := t.SourcePort(), t.DestinationPort()
 	t.SetSourcePort(dport)
 	t.SetDestinationPort(sport)
+
+	if debug.Debug() {
+		test.ValidIP(test.T(), ip)
+	}
 }
 
 func (c *Client) handleTCPConnect(fr *tcp.ForwarderRequest) {
-	if debug.Debug() {
-		id := fr.ID()
-		s := fmt.Sprintf("%s:%d --> %s:%d", id.LocalAddress, id.LocalPort, id.RemoteAddress, id.RemotePort)
-		fmt.Println(s)
-	}
-
 	var wq waiter.Queue
 	ep, err := fr.CreateEndpoint(&wq)
 	if err != nil {
@@ -283,8 +303,6 @@ func (c *Client) handleTCPConnect(fr *tcp.ForwarderRequest) {
 }
 
 func (c *Client) handleUDPConnect(fr *udp.ForwarderRequest) {
-	fmt.Println("udp")
-
 	var wq waiter.Queue
 	ep, err := fr.CreateEndpoint(&wq)
 	if err != nil {
