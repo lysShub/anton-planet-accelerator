@@ -158,7 +158,6 @@ func (s *Server) serveConn(conn *fatcp.Conn) (_ error) {
 				return nil
 			}
 		}
-		println("uplink")
 
 		var t header.Transport
 		switch peer.Proto {
@@ -182,6 +181,7 @@ func (s *Server) serveConn(conn *fatcp.Conn) (_ error) {
 				s.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			}
+			fmt.Println("add session", key.server.String())
 		}
 
 		// update src-port to local port
@@ -242,7 +242,6 @@ func (s *Server) recvService(raw *net.IPConn) error {
 		if !has {
 			// don't log, has too many other process's packet
 		} else {
-			println("downlink")
 
 			p := fatcp.Peer{Proto: key.proto, Remote: key.server.Addr()}
 			err = down.Downlink(s.srvCtx, ip, p)
