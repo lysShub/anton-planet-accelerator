@@ -12,7 +12,8 @@ import (
 )
 
 func TestXxxx(t *testing.T) {
-	s, err := server.NewServer(":8080")
+	s, err := server.NewServer(":443")
 	require.NoError(t, err)
+	fmt.Println("启动")
 	fmt.Println(s.Serve())
 }

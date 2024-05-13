@@ -36,7 +36,7 @@ type Client struct {
 	logger   *slog.Logger
 
 	config *fatcp.Config
-	conn   *fatcp.Conn
+	conn   *fatcp.Conn[*fatcp.Peer]
 
 	capture *divert.Handle
 	inbound divert.Address
@@ -66,7 +66,7 @@ func NewClient(server string, opts ...Option) (*Client, error) {
 	}
 	var err error
 
-	c.conn, err = fatcp.Dial(server, c.config)
+	c.conn, err = fatcp.Dial[*fatcp.Peer](server, c.config)
 	if err != nil {
 		return nil, c.close(err)
 	}
@@ -129,12 +129,13 @@ func (c *Client) close(cause error) error {
 
 func (c *Client) uplinkService() error {
 	var (
-		ip   = packet.Make(c.buffSize)
-		addr divert.Address
+		ip       = packet.Make(c.buffSize)
+		addr     divert.Address
+		overhead = fatcp.Overhead[*fatcp.Peer]()
 	)
 
 	for {
-		n, err := c.capture.RecvCtx(c.srvCtx, ip.Sets(fatcp.Overhead, 0xffff).Bytes(), &addr)
+		n, err := c.capture.RecvCtx(c.srvCtx, ip.Sets(overhead, 0xffff).Bytes(), &addr)
 		if err != nil {
 			return c.close(err)
 		} else if n == 0 {
@@ -202,7 +203,7 @@ func (c *Client) uplinkService() error {
 		t.SetSourcePort(srcPort)
 
 		pkt := ip.SetHead(ip.Head() + int(hdr.HeaderLength()))
-		id := fatcp.Peer{
+		id := &fatcp.Peer{
 			Remote: netip.AddrFrom4(hdr.DestinationAddress().As4()),
 			Proto:  hdr.TransportProtocol(),
 		}
