@@ -17,7 +17,8 @@ func TestXxxx(t *testing.T) {
 	divert.MustLoad(divert.DLL)
 	defer divert.Release()
 
-	c, err := client.NewClient("172.24.131.26:8080")
+	// c, err := client.NewClient("172.24.131.26:8080")
+	c, err := client.NewClient("103.94.185.61:443")
 	require.NoError(t, err)
 
 	fmt.Println("connected")

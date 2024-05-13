@@ -15,7 +15,6 @@ import (
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/fatcp"
-	sconn "github.com/lysShub/fatcp"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/mapping/process"
@@ -29,7 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-const warthunder = "curl.exe"
+const warthunder = "chrome.exe"
 
 type Client struct {
 	laddr    netip.Addr
@@ -58,18 +57,12 @@ func WithHandshake(handshake fatcp.Handshake) Option {
 	}
 }
 
-func WithMaxRecvBuffSize(size int) Option {
-	return func(c *Client) {
-		c.config.MaxRecvBuffSize = size
-	}
-}
-
 func NewClient(server string, opts ...Option) (*Client, error) {
 	var c = &Client{
 		laddr:    defaultAddr(),
 		buffSize: 1536,
 		logger:   slog.New(slog.NewJSONHandler(os.Stdout, nil)),
-		config:   &sconn.Config{},
+		config:   &fatcp.Config{},
 	}
 	var err error
 
@@ -159,26 +152,38 @@ func (c *Client) uplinkService() error {
 			return c.close(errors.Errorf("capture not support protocol %d", hdr.Protocol()))
 		}
 
-		pass := false
+		s := time.Now()
 		name, err := c.mapping.Name(netip.AddrPortFrom(
 			netip.AddrFrom4(hdr.SourceAddress().As4()), t.SourcePort(),
 		), hdr.Protocol())
+		d := time.Since(s)
+		if d > time.Second {
+			fmt.Println("slow mapping", "src", t.SourcePort(), "dst", t.DestinationPort())
+		}
 		if err != nil {
 			if errorx.Temporary(err) {
-				c.logger.Warn(err.Error(), errorx.Trace(nil))
-				pass = true
+				// c.logger.Warn(err.Error(), errorx.Trace(nil), slog.Int("dstport", int(t.SourcePort())))
+
+				if _, err = c.capture.Send(hdr, &addr); err != nil {
+					return c.close(err)
+				}
+
+				fmt.Println("notrecord", "proto", hdr.Protocol(), "src", t.SourcePort(), "dst", t.DestinationPort())
+
+				continue
 			} else {
 				return c.close(err)
 			}
-		} else {
-			pass = name != warthunder
-		}
-		if pass {
+		} else if name != warthunder {
 			if _, err = c.capture.Send(hdr, &addr); err != nil {
 				return c.close(err)
 			}
 			continue
 		}
+		// if _, err = c.capture.Send(hdr, &addr); err != nil {
+		// 	return c.close(err)
+		// }
+		// continue
 
 		if err := c.pcap.WritePacket(ip); err != nil {
 			return c.close(err)
@@ -197,7 +202,7 @@ func (c *Client) uplinkService() error {
 		t.SetSourcePort(srcPort)
 
 		pkt := ip.SetHead(ip.Head() + int(hdr.HeaderLength()))
-		id := sconn.Peer{
+		id := fatcp.Peer{
 			Remote: netip.AddrFrom4(hdr.DestinationAddress().As4()),
 			Proto:  hdr.TransportProtocol(),
 		}

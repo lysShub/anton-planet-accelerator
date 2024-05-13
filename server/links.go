@@ -1,10 +1,14 @@
+//go:build linux
+// +build linux
+
 package server
 
 import (
 	"context"
 	"net/netip"
 	"sync"
-	"syscall"
+	"sync/atomic"
+	"time"
 
 	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatcp/ports"
@@ -15,123 +19,184 @@ import (
 )
 
 type linkManager struct {
-	ap *ports.Adapter
+	addr     netip.Addr
+	ap       *ports.Adapter
+	duration time.Duration
 
-	uplinks  map[upkey]uint16
-	uplinkMu sync.RWMutex
+	uplinkMap map[uplink]*port
+	ttl       *Heap[ttlkey]
+	uplinkMu  sync.RWMutex
 
-	downlinks  map[downkey]*donwlink
-	downlinkMu sync.RWMutex
+	downlinkMap map[downlink]*link
+	donwlinkMu  sync.RWMutex
 }
 
-func newLinkManager(addr netip.Addr) *linkManager {
+type uplink struct {
+	Process netip.AddrPort
+	Proto   tcpip.TransportProtocolNumber
+	Server  netip.AddrPort
+}
+
+type downlink struct {
+	Server netip.AddrPort
+	Proto  tcpip.TransportProtocolNumber
+	Local  netip.AddrPort
+}
+
+func NewLinkManager(ttl time.Duration, addr netip.Addr) *linkManager {
 	var m = &linkManager{
-		ap:        ports.NewAdapter(addr),
-		uplinks:   map[upkey]uint16{},
-		downlinks: map[downkey]*donwlink{},
+		addr:     addr,
+		ap:       ports.NewAdapter(addr),
+		duration: ttl,
+
+		uplinkMap: map[uplink]*port{},
+		ttl:       NewHeap[ttlkey](16),
+
+		downlinkMap: map[downlink]*link{},
 	}
+
 	return m
 }
 
-type upkey struct {
-	proto tcpip.TransportProtocolNumber
-
-	// destionation server-address
-	server netip.AddrPort
+type ttlkey struct {
+	s uplink
+	t time.Time
 }
 
-type downkey struct {
-	// local port
-	local uint16
-
-	proto tcpip.TransportProtocolNumber
-
-	// destionation server-address
-	server netip.AddrPort
+func (t ttlkey) valid() bool {
+	return t.s.Process.IsValid() && t.s.Server.IsValid() && t.t != time.Time{}
 }
 
-type donwlink struct {
-	conn *fatcp.Conn
-
-	// client port
-	port uint16
+type link struct {
+	conn *Conn
+	port uint16 // client port
 }
 
-func (d *donwlink) Downlink(ctx context.Context, pkt *packet.Packet, srv fatcp.Peer) error {
-	header.UDP(pkt.Bytes()).SetDestinationPort(d.port)
-	return d.conn.Send(ctx, pkt, srv)
+func (l *link) Donwlink(ctx context.Context, pkt *packet.Packet, peer fatcp.Peer) error {
+	switch peer.Proto {
+	case header.TCPProtocolNumber:
+		header.TCP(pkt.Bytes()).SetDestinationPort(l.port)
+	case header.UDPProtocolNumber:
+		header.UDP(pkt.Bytes()).SetDestinationPort(l.port)
+	default:
+		return errors.Errorf("not support protocol %d", peer.Proto)
+	}
+	return l.conn.Send(ctx, pkt, peer)
 }
 
-// uplink malloc local port by destination server-address.
-func (m *linkManager) uplink(d upkey) (port uint16, has bool) {
-	m.uplinkMu.RLock()
-	defer m.uplinkMu.RUnlock()
+type port atomic.Uint64
 
-	port, has = m.uplinks[d]
-	return port, has
+func NewPort(p uint16) *port {
+	var a = &atomic.Uint64{}
+	a.Store(uint64(p) << 48)
+	return (*port)(a)
+}
+func (p *port) p() *atomic.Uint64 { return (*atomic.Uint64)(p) }
+func (p *port) Idle() bool {
+	d := p.p().Load()
+	const flags uint64 = 0xffff000000000000
+
+	p.p().Store(d & flags)
+	return d&(^flags) == 0
+}
+func (p *port) Port() uint16 { return uint16(p.p().Add(1) >> 48) }
+
+func (t *linkManager) cleanup() {
+	var (
+		links  []uplink
+		lports []uint16
+	)
+	t.uplinkMu.Lock()
+	for i := 0; i < t.ttl.Size(); i++ {
+		i := t.ttl.Pop()
+		if i.valid() && time.Since(i.t) > t.duration {
+			p := t.uplinkMap[i.s]
+			if p.Idle() {
+				links = append(links, i.s)
+				lports = append(lports, p.Port())
+				delete(t.uplinkMap, i.s)
+			} else {
+				t.ttl.Put(ttlkey{i.s, time.Now()})
+			}
+		} else {
+			t.ttl.Put(ttlkey{i.s, time.Now()})
+			break
+		}
+	}
+	t.uplinkMu.Unlock()
+	if len(links) == 0 {
+		return
+	}
+
+	var conns []*Conn
+	t.donwlinkMu.Lock()
+	for i, e := range links {
+		s := downlink{Server: e.Server, Proto: e.Proto, Local: netip.AddrPortFrom(t.addr, lports[i])}
+		conns = append(conns, t.downlinkMap[s].conn)
+		delete(t.downlinkMap, s)
+	}
+	t.donwlinkMu.Unlock()
+
+	for i, e := range links {
+		t.ap.DelPort(e.Proto, lports[i], e.Server)
+	}
+	for _, e := range conns {
+		if e != nil {
+			e.Dec()
+		}
+	}
 }
 
-func (m *linkManager) downlink(s downkey) (down *donwlink, has bool) {
-	m.downlinkMu.RLock()
-	defer m.downlinkMu.RUnlock()
+func (t *linkManager) Add(s uplink, c *Conn) (localPort uint16, err error) {
+	t.cleanup()
 
-	down, has = m.downlinks[s]
-	return down, has
-}
-
-type session struct {
-	src   netip.AddrPort
-	proto uint8
-	dst   netip.AddrPort
-}
-
-func (m *linkManager) add(clientPort uint16, key upkey, conn *fatcp.Conn) (port uint16, err error) {
-	port, err = m.ap.GetPort(tcpip.TransportProtocolNumber(key.proto), key.server)
+	localPort, err = t.ap.GetPort(s.Proto, s.Server)
 	if err != nil {
 		return 0, err
 	}
 
-	m.uplinkMu.Lock()
-	m.uplinks[upkey{proto: key.proto, server: key.server}] = port
-	m.uplinkMu.Unlock()
+	t.uplinkMu.Lock()
+	t.uplinkMap[s] = NewPort(localPort)
+	t.ttl.Put(ttlkey{s: s, t: time.Now()})
+	t.uplinkMu.Unlock()
 
-	m.downlinkMu.Lock()
-	m.downlinks[downkey{
-		local: port, proto: key.proto, server: key.server,
-	}] = &donwlink{
-		conn: conn,
-		port: clientPort,
+	t.donwlinkMu.Lock()
+	t.downlinkMap[downlink{
+		Server: s.Server,
+		Proto:  s.Proto,
+		Local:  netip.AddrPortFrom(t.addr, localPort),
+	}] = &link{
+		conn: c,
+		port: s.Process.Port(),
 	}
-	m.downlinkMu.Unlock()
+	t.donwlinkMu.Unlock()
 
-	return port, nil
+	return localPort, nil
 }
 
-func (s *linkManager) Close() error {
-	return s.ap.Close()
+// Uplink get uplink packet local port
+func (t *linkManager) Uplink(s uplink) (localPort uint16, has bool) {
+	t.uplinkMu.RLock()
+	defer t.uplinkMu.RUnlock()
+	p, has := t.uplinkMap[s]
+	if !has {
+		return 0, false
+	}
+	return p.Port(), true
 }
 
-func getDownkeyAndStripIPHeader(ip *packet.Packet) (downkey, error) {
-	hdr := header.IPv4(ip.Bytes())
-	switch ver := header.IPVersion(hdr); ver {
-	case 4:
-	default:
-		return downkey{}, errors.Errorf("not support ip version %d", ver)
-	}
-	switch proto := hdr.Protocol(); proto {
-	case syscall.IPPROTO_TCP, syscall.IPPROTO_UDP:
-	default:
-		return downkey{}, errors.Errorf("not support protocol %d", proto)
-	}
-	defer ip.SetHead(ip.Head() + int(hdr.HeaderLength()))
+// Downlink get donwlink packet proxyer and client port
+func (t *linkManager) Downlink(s downlink) (p *link, has bool) {
+	t.donwlinkMu.RLock()
+	defer t.donwlinkMu.RUnlock()
 
-	var t = header.UDP(hdr.Payload())
-	return downkey{
-		local: t.DestinationPort(),
-		proto: hdr.TransportProtocol(),
-		server: netip.AddrPortFrom(
-			netip.AddrFrom4(hdr.SourceAddress().As4()),
-			t.SourcePort(),
-		),
-	}, nil
+	key, has := t.downlinkMap[s]
+	if !has {
+		return nil, false
+	}
+	return key, true
+}
+
+func (t *linkManager) Close() error {
+	return t.ap.Close()
 }

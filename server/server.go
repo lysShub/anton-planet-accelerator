@@ -12,6 +12,7 @@ import (
 	"os"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/lysShub/fatcp"
 	"github.com/lysShub/netkit/debug"
@@ -24,6 +25,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
 type Server struct {
@@ -64,7 +67,7 @@ func NewServer(addr string, opts ...Option) (*Server, error) {
 			return nil, err
 		}
 	}
-	s.links = newLinkManager(s.listener.Addr().Addr())
+	s.links = NewLinkManager(time.Second*30, s.listener.Addr().Addr())
 
 	var err error
 	s.tcpSnder, err = net.ListenIP("ip4:tcp", &net.IPAddr{IP: s.addr.Addr().AsSlice()})
@@ -134,11 +137,11 @@ func (s *Server) Serve() error {
 		}
 
 		fmt.Println("accept", conn.RemoteAddr())
-		go s.serveConn(conn)
+		go s.serveConn(&Conn{Conn: conn})
 	}
 }
 
-func (s *Server) serveConn(conn *fatcp.Conn) (_ error) {
+func (s *Server) serveConn(conn *Conn) (_ error) {
 	var pkt = packet.Make(0, 1536)
 
 	// todo: handle tcp
@@ -170,18 +173,19 @@ func (s *Server) serveConn(conn *fatcp.Conn) (_ error) {
 		}
 
 		// get/alloc local port
-		key := upkey{
-			proto:  peer.Proto,
-			server: netip.AddrPortFrom(peer.Remote, t.DestinationPort()),
+		link := uplink{
+			Process: netip.AddrPortFrom(conn.LocalAddr().Addr(), t.SourcePort()),
+			Proto:   peer.Proto,
+			Server:  netip.AddrPortFrom(peer.Remote, t.DestinationPort()),
 		}
-		port, has := s.links.uplink(key)
+		port, has := s.links.Uplink(link)
 		if !has {
-			port, err = s.links.add(t.SourcePort(), key, conn)
+			port, err = s.links.Add(link, conn)
 			if err != nil {
 				s.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			}
-			fmt.Println("add session", key.server.String())
+			fmt.Println("add session", link.Server.String())
 		}
 
 		// update src-port to local port
@@ -193,7 +197,7 @@ func (s *Server) serveConn(conn *fatcp.Conn) (_ error) {
 			psum := header.PseudoHeaderChecksum(
 				tcpip.TransportProtocolNumber(peer.Proto),
 				tcpip.AddrFrom4(s.listener.Addr().Addr().As4()),
-				tcpip.AddrFrom4(key.server.Addr().As4()),
+				tcpip.AddrFrom4(link.Server.Addr().As4()),
 				0,
 			)
 			test.ValidTCP(test.T(), pkt.Bytes(), psum)
@@ -203,7 +207,7 @@ func (s *Server) serveConn(conn *fatcp.Conn) (_ error) {
 		case syscall.IPPROTO_TCP:
 			_, err = s.tcpSnder.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: peer.Remote.AsSlice()})
 		case syscall.IPPROTO_UDP:
-			_, err = s.tcpSnder.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: peer.Remote.AsSlice()})
+			_, err = s.udpSnder.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: peer.Remote.AsSlice()})
 		default:
 		}
 		if err != nil {
@@ -233,23 +237,43 @@ func (s *Server) recvService(raw *net.IPConn) error {
 			continue
 		}
 
-		key, err := getDownkeyAndStripIPHeader(ip)
+		link, err := StripIP(ip)
 		if err != nil {
 			s.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
-		down, has := s.links.downlink(key)
+		down, has := s.links.Downlink(link)
 		if !has {
 			// don't log, has too many other process's packet
 		} else {
-
-			p := fatcp.Peer{Proto: key.proto, Remote: key.server.Addr()}
-			err = down.Downlink(s.srvCtx, ip, p)
+			p := fatcp.Peer{Proto: link.Proto, Remote: link.Server.Addr()}
+			err = down.Donwlink(s.srvCtx, ip, p)
 			if err != nil {
 				s.logger.Warn(err.Error(), errorx.Trace(err))
 			}
 		}
 	}
+}
+
+func StripIP(ip *packet.Packet) (downlink, error) {
+	if header.IPVersion(ip.Bytes()) != 4 {
+		return downlink{}, errors.New("only support ipv4")
+	}
+
+	hdr := header.IPv4(ip.Bytes())
+	switch hdr.TransportProtocol() {
+	case tcp.ProtocolNumber, udp.ProtocolNumber:
+	default:
+		return downlink{}, errors.Errorf("not support protocol %d", hdr.Protocol())
+	}
+	t := header.UDP(hdr.Payload())
+
+	ip.SetHead(ip.Head() + int(hdr.HeaderLength()))
+	return downlink{
+		Server: netip.AddrPortFrom(netip.AddrFrom4(hdr.SourceAddress().As4()), t.SourcePort()),
+		Proto:  hdr.TransportProtocol(),
+		Local:  netip.AddrPortFrom(netip.AddrFrom4(hdr.DestinationAddress().As4()), t.DestinationPort()),
+	}, nil
 }
 
 func resolve(addr string, local bool) (netip.AddrPort, error) {

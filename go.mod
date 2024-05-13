@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/lysShub/divert-go v0.0.0-20240505203543-cdad175fca17
-	github.com/lysShub/fatcp v0.0.0-20240512181504-6de3e3741d7d
+	github.com/lysShub/fatcp v0.0.0-20240513095859-2e9b523284b7
 	github.com/lysShub/netkit v0.0.0-20240508094900-18f3212298c5
 	github.com/lysShub/rawsock v0.0.0-20240506193751-9f04d87014a9
 	github.com/pkg/errors v0.9.1
