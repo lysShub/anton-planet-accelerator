@@ -28,7 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-const warthunder = "chrome.exe"
+const warthunder = "aces.exe"
 
 type Client struct {
 	laddr    netip.Addr
@@ -153,38 +153,25 @@ func (c *Client) uplinkService() error {
 			return c.close(errors.Errorf("capture not support protocol %d", hdr.Protocol()))
 		}
 
-		s := time.Now()
+		pass := false
 		name, err := c.mapping.Name(netip.AddrPortFrom(
 			netip.AddrFrom4(hdr.SourceAddress().As4()), t.SourcePort(),
 		), hdr.Protocol())
-		d := time.Since(s)
-		if d > time.Second {
-			fmt.Println("slow mapping", "src", t.SourcePort(), "dst", t.DestinationPort())
-		}
 		if err != nil {
 			if errorx.Temporary(err) {
 				// c.logger.Warn(err.Error(), errorx.Trace(nil), slog.Int("dstport", int(t.SourcePort())))
-
-				if _, err = c.capture.Send(hdr, &addr); err != nil {
-					return c.close(err)
-				}
-
-				fmt.Println("notrecord", "proto", hdr.Protocol(), "src", t.SourcePort(), "dst", t.DestinationPort())
-
-				continue
+				pass = true
 			} else {
 				return c.close(err)
 			}
-		} else if name != warthunder {
+		} else {
+			pass = name != warthunder
+		}
+		if pass {
 			if _, err = c.capture.Send(hdr, &addr); err != nil {
 				return c.close(err)
 			}
-			continue
 		}
-		// if _, err = c.capture.Send(hdr, &addr); err != nil {
-		// 	return c.close(err)
-		// }
-		// continue
 
 		if err := c.pcap.WritePacket(ip); err != nil {
 			return c.close(err)
