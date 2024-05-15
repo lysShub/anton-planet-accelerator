@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -14,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lysShub/anton-planet-accelerator/control"
 	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatcp/links"
 	"github.com/lysShub/fatcp/links/maps"
@@ -136,23 +136,35 @@ func (s *Server) Serve() error {
 			return s.close(err)
 		}
 
-		fmt.Println("accept", conn.RemoteAddr())
+		s.logger.Info("accept", slog.String("client", conn.RemoteAddr().String()))
 		go s.serveConn(&links.Conn{Conn: conn})
 	}
 }
 
 func (s *Server) serveConn(conn *links.Conn) (_ error) {
-	var pkt = packet.Make(0, 1536)
+	ctx, cancle := context.WithCancelCause(s.srvCtx)
+	defer cancle(nil)
 
-	// todo: handle tcp
-	_, err := conn.BuiltinTCP(s.srvCtx)
+	// handshake
+	handshakeCtx, handshakeCancel := context.WithTimeout(ctx, time.Second*5)
+	defer handshakeCancel()
+	tcp, err := conn.BuiltinTCP(handshakeCtx)
 	if err != nil {
 		s.logger.Error(err.Error(), errorx.Trace(err), slog.String("clinet", conn.RemoteAddr().String()))
 		return
 	}
 
+	// control
+	context.AfterFunc(ctx, func() { tcp.SetDeadline(time.Now()) }) // todo: gonet support bind ctx
+	ctr := control.NewServer(tcp)
+	go func() {
+		err := ctr.Serve()
+		cancle(err)
+	}()
+
+	var pkt = packet.Make(0, 1536)
 	for {
-		peer, err := conn.Recv(s.srvCtx, pkt.Sets(0, 0xffff))
+		peer, err := conn.Recv(ctx, pkt.Sets(0, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				s.logger.Warn(err.Error(), errorx.Trace(err))
@@ -185,7 +197,7 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 				s.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			}
-			fmt.Println("add session", link.Server.String())
+			s.logger.Info("add session", slog.String("server", link.Server.String()))
 		}
 
 		// update src-port to local port
@@ -216,13 +228,14 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 	}
 }
 
-var Overhead = 36
-
 func (s *Server) recvService(raw *net.IPConn) error {
-	var ip = packet.Make(1536)
+	var (
+		ip       = packet.Make(1536)
+		overhead = fatcp.Overhead[*fatcp.Peer]()
+	)
 
 	for {
-		n, err := raw.Read(ip.Sets(Overhead, 0xffff).Bytes())
+		n, err := raw.Read(ip.Sets(overhead, 0xffff).Bytes())
 		if err != nil {
 			if errorx.Temporary(err) {
 				s.logger.Warn(err.Error(), errorx.Trace(nil))
@@ -249,6 +262,7 @@ func (s *Server) recvService(raw *net.IPConn) error {
 			p := &fatcp.Peer{Proto: link.Proto, Remote: link.Server.Addr()}
 			err = down.Donwlink(s.srvCtx, ip, p)
 			if err != nil {
+				// todo: handle downlinker closed: delete links record
 				s.logger.Warn(err.Error(), errorx.Trace(err))
 			}
 		}

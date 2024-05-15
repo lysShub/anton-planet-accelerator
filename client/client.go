@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lysShub/anton-planet-accelerator/control"
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/fatcp"
 	"github.com/lysShub/netkit/debug"
@@ -43,6 +44,7 @@ type Client struct {
 	mapping process.Mapping
 
 	pcap *pcap.Pcap
+	ctr  *control.Client
 
 	srvCtx   context.Context
 	cancel   context.CancelFunc
@@ -66,10 +68,19 @@ func NewClient(server string, opts ...Option) (*Client, error) {
 	}
 	var err error
 
-	c.conn, err = fatcp.Dial[*fatcp.Peer](server, c.config)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	c.conn, err = fatcp.DialCtx[*fatcp.Peer](ctx, server, c.config)
 	if err != nil {
 		return nil, c.close(err)
 	}
+
+	tcp, err := c.conn.BuiltinTCP(ctx)
+	if err != nil {
+		return nil, c.close(err)
+	}
+	c.ctr = control.NewClient(tcp)
+	go func() { c.close(c.ctr.Serve()) }()
 
 	var filter = "outbound and !loopback and ip and (tcp or udp)"
 	c.capture, err = divert.Open(filter, divert.Network, 0, 0)
@@ -236,6 +247,8 @@ func (c *Client) downlinkServic() error {
 		}
 	}
 }
+
+func (c *Client) Ping() (time.Duration, error) { return c.ctr.Ping() }
 
 func (c *Client) Close() error {
 	return c.close(nil)
