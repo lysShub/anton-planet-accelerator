@@ -182,6 +182,7 @@ func (c *Client) uplinkService() error {
 			if _, err = c.capture.Send(hdr, &addr); err != nil {
 				return c.close(err)
 			}
+			continue
 		}
 
 		if err := c.pcap.WritePacket(ip); err != nil {

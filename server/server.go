@@ -155,7 +155,8 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 	}
 
 	// control
-	context.AfterFunc(ctx, func() { tcp.SetDeadline(time.Now()) }) // todo: gonet support bind ctx
+	stop := context.AfterFunc(ctx, func() { tcp.SetDeadline(time.Now()) }) // todo: gonet support bind ctx
+	defer stop()
 	ctr := control.NewServer(tcp)
 	go func() {
 		err := ctr.Serve()
@@ -177,6 +178,7 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 		var t header.Transport
 		switch peer.Proto {
 		case syscall.IPPROTO_TCP:
+			// todo: 验证pkt是否是合法的
 			t = header.TCP(pkt.Bytes())
 		case syscall.IPPROTO_UDP:
 			t = header.UDP(pkt.Bytes())
