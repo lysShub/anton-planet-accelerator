@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -178,10 +179,15 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 		var t header.Transport
 		switch peer.Proto {
 		case syscall.IPPROTO_TCP:
-			// todo: 验证pkt是否是合法的
 			t = header.TCP(pkt.Bytes())
+			if pkt.Data() < header.TCPMinimumSize {
+				s.logger.Warn("invalid pacekt", slog.String("ip", fmt.Sprintf("%+v", pkt.SetHead(0).Bytes())))
+			}
 		case syscall.IPPROTO_UDP:
 			t = header.UDP(pkt.Bytes())
+			if pkt.Data() < header.UDPMinimumSize {
+				s.logger.Warn("invalid pacekt", slog.String("ip", fmt.Sprintf("%+v", pkt.SetHead(0).Bytes())))
+			}
 		default:
 			continue
 		}

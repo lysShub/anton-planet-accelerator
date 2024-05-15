@@ -29,7 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-const warthunder = "aces.exe"
+const warthunder = "chrome.exe"
 
 type Client struct {
 	laddr    netip.Addr

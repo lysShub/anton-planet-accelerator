@@ -12,6 +12,7 @@ import (
 	"github.com/lysShub/rawsock/test"
 )
 
+// nohup go run -tags "-race debug" . &
 func main() {
 	err := bind.SetGRO(test.LocIP(), netip.AddrFrom4([4]byte{8, 8, 8, 8}), false)
 	if err != nil {
