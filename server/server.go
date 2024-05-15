@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -181,12 +182,16 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 		case syscall.IPPROTO_TCP:
 			t = header.TCP(pkt.Bytes())
 			if pkt.Data() < header.TCPMinimumSize {
-				s.logger.Warn("invalid pacekt", slog.String("ip", fmt.Sprintf("%+v", pkt.SetHead(0).Bytes())))
+				ip := strings.ReplaceAll(fmt.Sprintf("%+v", pkt.SetHead(0).Bytes()), " ", ",")
+				s.logger.Warn("invalid pacekt", slog.String("ip", ip))
+				continue
 			}
 		case syscall.IPPROTO_UDP:
 			t = header.UDP(pkt.Bytes())
 			if pkt.Data() < header.UDPMinimumSize {
-				s.logger.Warn("invalid pacekt", slog.String("ip", fmt.Sprintf("%+v", pkt.SetHead(0).Bytes())))
+				ip := strings.ReplaceAll(fmt.Sprintf("%+v", pkt.SetHead(0).Bytes()), " ", ",")
+				s.logger.Warn("invalid pacekt", slog.String("ip", ip))
+				continue
 			}
 		default:
 			continue
