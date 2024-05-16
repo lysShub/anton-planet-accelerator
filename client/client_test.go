@@ -19,7 +19,8 @@ func TestXxxx(t *testing.T) {
 
 	// c, err := client.NewClient("172.24.131.26:8080")
 	// c, err := client.NewClient("103.94.185.61:443") // 旧金山
-	c, err := client.NewClient("8.222.33.114:443") // 吉隆坡
+	// c, err := client.NewClient("8.222.33.114:443") // 吉隆坡
+	c, err := client.NewClient("8.222.83.247:443") // 东京
 	require.NoError(t, err)
 
 	fmt.Println("connected")

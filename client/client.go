@@ -5,6 +5,8 @@ package client
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net"
@@ -29,7 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-const warthunder = "chrome.exe"
+const warthunder = "curl.exe"
 
 type Client struct {
 	laddr    netip.Addr
@@ -163,20 +165,21 @@ func (c *Client) uplinkService() error {
 		default:
 			return c.close(errors.Errorf("capture not support protocol %d", hdr.Protocol()))
 		}
+		dst := netip.AddrFrom4(hdr.SourceAddress().As4())
 
-		pass := false
-		name, err := c.mapping.Name(netip.AddrPortFrom(
-			netip.AddrFrom4(hdr.SourceAddress().As4()), t.SourcePort(),
-		), hdr.Protocol())
-		if err != nil {
-			if errorx.Temporary(err) {
-				// c.logger.Warn(err.Error(), errorx.Trace(nil), slog.Int("dstport", int(t.SourcePort())))
-				pass = true
+		pass := dst.IsMulticast()
+		if !pass {
+			name, err := c.mapping.Name(netip.AddrPortFrom(dst, t.SourcePort()), hdr.Protocol())
+			if err != nil {
+				if errorx.Temporary(err) {
+					// c.logger.Warn(err.Error(), errorx.Trace(nil), slog.Int("dstport", int(t.SourcePort())))
+					pass = true
+				} else {
+					return c.close(err)
+				}
 			} else {
-				return c.close(err)
+				pass = name != warthunder
 			}
-		} else {
-			pass = name != warthunder
 		}
 		if pass {
 			if _, err = c.capture.Send(hdr, &addr); err != nil {
@@ -206,6 +209,9 @@ func (c *Client) uplinkService() error {
 			Remote: netip.AddrFrom4(hdr.DestinationAddress().As4()),
 			Proto:  hdr.TransportProtocol(),
 		}
+		if id.Proto == header.TCPProtocolNumber {
+			UpdateMSS(pkt.Bytes(), -overhead)
+		}
 		err = c.conn.Send(c.srvCtx, pkt, id)
 		if err != nil {
 			return c.close(err)
@@ -214,6 +220,8 @@ func (c *Client) uplinkService() error {
 }
 func (c *Client) downlinkServic() error {
 	var pkt = packet.Make(0, c.buffSize)
+	var overhead = fatcp.Overhead[*fatcp.Peer]()
+
 	for {
 		peer, err := c.conn.Recv(c.srvCtx, pkt.Sets(0, c.buffSize))
 		if err != nil {
@@ -223,6 +231,10 @@ func (c *Client) downlinkServic() error {
 			} else {
 				return c.close(err)
 			}
+		}
+
+		if peer.Proto == header.TCPProtocolNumber {
+			UpdateMSS(pkt.Bytes(), -overhead)
 		}
 
 		ip := header.IPv4(pkt.AttachN(header.IPv4MinimumSize).Bytes())
@@ -303,4 +315,52 @@ func ifaceByAddr(laddr netip.Addr) (*net.Interface, error) {
 	}
 
 	return nil, errors.Errorf("not found adapter %s mtu", laddr.String())
+}
+
+func UpdateMSS(hdr header.TCP, delta int) error {
+	n := int(hdr.DataOffset())
+	if n > header.TCPMinimumSize && delta != 0 {
+		oldSum := ^hdr.Checksum()
+		for i := header.TCPMinimumSize; i < n; {
+			kind := hdr[i]
+			switch kind {
+			case header.TCPOptionMSS:
+				/* {kind} {length} {max seg size} */
+				if i+4 <= n && hdr[i+1] == 4 {
+					old := binary.BigEndian.Uint16(hdr[i+2:])
+					new := int(old) + delta
+					if new <= 0 {
+						return errors.Errorf("updated mss is invalid %d", new)
+					}
+
+					if (i+2)%2 == 0 {
+						binary.BigEndian.PutUint16(hdr[i+2:], uint16(new))
+						sum := checksum.Combine(checksum.Combine(oldSum, ^old), uint16(new))
+						hdr.SetChecksum(^sum)
+					} else if i+5 <= n {
+						sum := checksum.Combine(oldSum, ^checksum.Checksum(hdr[i+1:i+5], 0))
+
+						binary.BigEndian.PutUint16(hdr[i+2:], uint16(new))
+
+						sum = checksum.Combine(sum, checksum.Checksum(hdr[i+1:i+5], 0))
+						hdr.SetChecksum(^sum)
+					}
+					return nil
+				} else {
+					return errors.Errorf("invalid tcp packet: %s", hex.EncodeToString(hdr[:n]))
+				}
+			case header.TCPOptionNOP:
+				i += 1
+			case header.TCPOptionEOL:
+				return nil // not mss opt
+			default:
+				if i+1 < n {
+					i += int(hdr[i+1])
+				} else {
+					return errors.Errorf("invalid tcp packet: %s", hex.EncodeToString(hdr[:n]))
+				}
+			}
+		}
+	}
+	return nil
 }

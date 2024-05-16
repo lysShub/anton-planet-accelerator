@@ -171,6 +171,7 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 		if err != nil {
 			if errorx.Temporary(err) {
 				s.logger.Warn(err.Error(), errorx.Trace(err))
+				continue
 			} else {
 				s.logger.Error(err.Error(), errorx.Trace(err), slog.String("clinet", conn.RemoteAddr().String()))
 				return nil
@@ -215,17 +216,28 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 
 		// update src-port to local port
 		t.SetSourcePort(port)
-		sum := checksum.Combine(t.Checksum(), port)
-		sum = checksum.Combine(sum, s.addrsum)
-		t.SetChecksum(^sum)
-		if debug.Debug() {
+		// sum := checksum.Combine(t.Checksum(), port)
+		// sum = checksum.Combine(sum, s.addrsum)
+		// t.SetChecksum(^sum)
+		{ // temp
+			t.SetChecksum(0)
 			psum := header.PseudoHeaderChecksum(
+				tcpip.TransportProtocolNumber(peer.Proto),
+				tcpip.AddrFrom4(s.listener.Addr().Addr().As4()),
+				tcpip.AddrFrom4(link.Server.Addr().As4()),
+				uint16(len(pkt.Bytes())),
+			)
+			sum := checksum.Checksum(pkt.Bytes(), psum)
+			t.SetChecksum(^sum)
+		}
+		if debug.Debug() {
+			psum1 := header.PseudoHeaderChecksum(
 				tcpip.TransportProtocolNumber(peer.Proto),
 				tcpip.AddrFrom4(s.listener.Addr().Addr().As4()),
 				tcpip.AddrFrom4(link.Server.Addr().As4()),
 				0,
 			)
-			test.ValidTCP(test.T(), pkt.Bytes(), psum)
+			test.ValidTCP(test.T(), pkt.Bytes(), psum1)
 		}
 
 		switch peer.Proto {
