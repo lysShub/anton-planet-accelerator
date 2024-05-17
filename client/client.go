@@ -15,7 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lysShub/anton-planet-accelerator/control"
+	"github.com/lysShub/anton-planet-accelerator/common"
+	"github.com/lysShub/anton-planet-accelerator/common/control"
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/fatcp"
 	"github.com/lysShub/netkit/debug"
@@ -31,7 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-const warthunder = "curl.exe"
+const warthunder = "aces.exe"
 
 type Client struct {
 	laddr    netip.Addr
@@ -192,19 +193,7 @@ func (c *Client) uplinkService() error {
 			return c.close(err)
 		}
 
-		t.SetChecksum(0)
-		srcPort := t.SourcePort()
-		t.SetSourcePort(0)
-		sum := header.PseudoHeaderChecksum(
-			hdr.TransportProtocol(),
-			tcpip.AddrFrom4([4]byte{}),
-			hdr.DestinationAddress(),
-			uint16(len(hdr.Payload())),
-		)
-		t.SetChecksum(checksum.Checksum(hdr.Payload(), sum))
-		t.SetSourcePort(srcPort)
-
-		pkt := ip.SetHead(ip.Head() + int(hdr.HeaderLength()))
+		pkt := common.ChecksumClient(ip)
 		id := &fatcp.Peer{
 			Remote: netip.AddrFrom4(hdr.DestinationAddress().As4()),
 			Proto:  hdr.TransportProtocol(),

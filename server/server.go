@@ -5,28 +5,23 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
 	"os"
-	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
-	"github.com/lysShub/anton-planet-accelerator/control"
+	"github.com/lysShub/anton-planet-accelerator/common"
+	"github.com/lysShub/anton-planet-accelerator/common/control"
 	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatcp/links"
 	"github.com/lysShub/fatcp/links/maps"
-	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/rawsock/helper"
 	rawtcp "github.com/lysShub/rawsock/tcp"
-	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -76,7 +71,7 @@ func NewServer(addr string, opts ...Option) (*Server, error) {
 	if err != nil {
 		return nil, errors.WithStack(err)
 	} else {
-		err = filterLocalPorts(s.tcpSnder, s.addr.Port())
+		err = setHdrinclAndBpfFilterLocalPorts(s.tcpSnder, s.addr.Port())
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
@@ -84,6 +79,11 @@ func NewServer(addr string, opts ...Option) (*Server, error) {
 	s.udpSnder, err = net.ListenIP("ip4:udp", &net.IPAddr{IP: s.addr.Addr().AsSlice()})
 	if err != nil {
 		return nil, errors.WithStack(err)
+	} else {
+		err = setHdrinclAndBpfFilterLocalPorts(s.tcpSnder)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
 	}
 
 	s.srvCtx, s.cancel = context.WithCancel(context.Background())
@@ -143,8 +143,12 @@ func (s *Server) Serve() error {
 	}
 }
 
+// links.Conn 还应该具备流控, 丢包统计, 超时等功能
 func (s *Server) serveConn(conn *links.Conn) (_ error) {
-	ctx, cancle := context.WithCancelCause(s.srvCtx)
+	var (
+		client      = conn.RemoteAddr()
+		ctx, cancle = context.WithCancelCause(s.srvCtx)
+	)
 	defer cancle(nil)
 
 	// handshake
@@ -152,7 +156,7 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 	defer handshakeCancel()
 	tcp, err := conn.BuiltinTCP(handshakeCtx)
 	if err != nil {
-		s.logger.Error(err.Error(), errorx.Trace(err), slog.String("clinet", conn.RemoteAddr().String()))
+		s.logger.Error(err.Error(), errorx.Trace(err), slog.String("clinet", client.String()))
 		return
 	}
 
@@ -166,6 +170,7 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 	}()
 
 	var pkt = packet.Make(0, 1536)
+	var t header.Transport
 	for {
 		peer, err := conn.Recv(ctx, pkt.Sets(0, 0xffff))
 		if err != nil {
@@ -173,78 +178,39 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 				s.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			} else {
-				s.logger.Error(err.Error(), errorx.Trace(err), slog.String("clinet", conn.RemoteAddr().String()))
+				s.logger.Error(err.Error(), errorx.Trace(err), slog.String("client", client.String()))
 				return nil
 			}
 		}
 
-		var t header.Transport
-		switch peer.Proto {
-		case syscall.IPPROTO_TCP:
-			t = header.TCP(pkt.Bytes())
-			if pkt.Data() < header.TCPMinimumSize {
-				ip := strings.ReplaceAll(fmt.Sprintf("%+v", pkt.SetHead(0).Bytes()), " ", ",")
-				s.logger.Warn("invalid pacekt", slog.String("ip", ip))
-				continue
-			}
-		case syscall.IPPROTO_UDP:
-			t = header.UDP(pkt.Bytes())
-			if pkt.Data() < header.UDPMinimumSize {
-				ip := strings.ReplaceAll(fmt.Sprintf("%+v", pkt.SetHead(0).Bytes()), " ", ",")
-				s.logger.Warn("invalid pacekt", slog.String("ip", ip))
-				continue
-			}
-		default:
-			continue
-		}
-
 		// get/alloc local port
-		link := links.Uplink{
+		up := links.Uplink{
 			Process: netip.AddrPortFrom(conn.LocalAddr().Addr(), t.SourcePort()),
 			Proto:   peer.Proto,
 			Server:  netip.AddrPortFrom(peer.Remote, t.DestinationPort()),
 		}
-		port, has := s.links.Uplink(link)
+		localPort, has := s.links.Uplink(up)
 		if !has {
-			port, err = s.links.Add(link, conn)
+			localPort, err = s.links.Add(up, conn)
 			if err != nil {
 				s.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			}
-			s.logger.Info("add session", slog.String("server", link.Server.String()))
+			s.logger.Info("add session", slog.String("server", up.Server.String()), slog.String("client", client.String()))
 		}
 
-		// update src-port to local port
-		t.SetSourcePort(port)
-		// sum := checksum.Combine(t.Checksum(), port)
-		// sum = checksum.Combine(sum, s.addrsum)
-		// t.SetChecksum(^sum)
-		{ // temp
-			t.SetChecksum(0)
-			psum := header.PseudoHeaderChecksum(
-				tcpip.TransportProtocolNumber(peer.Proto),
-				tcpip.AddrFrom4(s.listener.Addr().Addr().As4()),
-				tcpip.AddrFrom4(link.Server.Addr().As4()),
-				uint16(len(pkt.Bytes())),
-			)
-			sum := checksum.Checksum(pkt.Bytes(), psum)
-			t.SetChecksum(^sum)
+		down := links.Downlink{
+			Server: up.Server,
+			Proto:  up.Proto,
+			Local:  netip.AddrPortFrom(s.addr.Addr(), localPort),
 		}
-		if debug.Debug() {
-			psum1 := header.PseudoHeaderChecksum(
-				tcpip.TransportProtocolNumber(peer.Proto),
-				tcpip.AddrFrom4(s.listener.Addr().Addr().As4()),
-				tcpip.AddrFrom4(link.Server.Addr().As4()),
-				0,
-			)
-			test.ValidTCP(test.T(), pkt.Bytes(), psum1)
-		}
+		ip := common.ChecksumServer(pkt, down)
 
 		switch peer.Proto {
-		case syscall.IPPROTO_TCP:
-			_, err = s.tcpSnder.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: peer.Remote.AsSlice()})
-		case syscall.IPPROTO_UDP:
-			_, err = s.udpSnder.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: peer.Remote.AsSlice()})
+		case header.TCPProtocolNumber:
+			_, err = s.tcpSnder.Write(ip.Bytes())
+		case header.UDPProtocolNumber:
+			_, err = s.udpSnder.Write(ip.Bytes())
 		default:
 		}
 		if err != nil {
