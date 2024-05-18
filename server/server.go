@@ -15,6 +15,7 @@ import (
 	"github.com/lysShub/anton-planet-accelerator/common"
 	"github.com/lysShub/anton-planet-accelerator/common/control"
 	"github.com/lysShub/fatcp"
+	"github.com/lysShub/fatcp/crypto"
 	"github.com/lysShub/fatcp/links"
 	"github.com/lysShub/fatcp/links/maps"
 	"github.com/lysShub/netkit/errorx"
@@ -59,7 +60,14 @@ func NewServer(addr string, opts ...Option) (*Server, error) {
 	if rawl, err := rawtcp.Listen(s.addr); err != nil {
 		return nil, err
 	} else {
-		s.listener, err = fatcp.NewListener[*fatcp.Peer](rawl, &fatcp.Config{})
+		s.listener, err = fatcp.NewListener[*fatcp.Peer](rawl, &fatcp.Config{
+			Handshake: &fatcp.Sign{ // todo:
+				Sign: []byte{1, 2},
+				Parser: func(ctx context.Context, b []byte) (crypto.Key, error) {
+					return crypto.Key{1: 1}, nil
+				},
+			},
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -183,6 +191,15 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 			}
 		}
 
+		switch peer.Proto {
+		case header.TCPProtocolNumber:
+			t = header.TCP(pkt.Bytes())
+		case header.UDPProtocolNumber:
+			t = header.UDP(pkt.Bytes())
+		default:
+			panic(peer.Proto)
+		}
+
 		// get/alloc local port
 		up := links.Uplink{
 			Process: netip.AddrPortFrom(conn.LocalAddr().Addr(), t.SourcePort()),
@@ -208,9 +225,9 @@ func (s *Server) serveConn(conn *links.Conn) (_ error) {
 
 		switch peer.Proto {
 		case header.TCPProtocolNumber:
-			_, err = s.tcpSnder.Write(ip.Bytes())
+			_, err = s.tcpSnder.WriteToIP(ip.Bytes(), &net.IPAddr{IP: up.Server.Addr().AsSlice()})
 		case header.UDPProtocolNumber:
-			_, err = s.udpSnder.Write(ip.Bytes())
+			_, err = s.udpSnder.WriteToIP(ip.Bytes(), &net.IPAddr{IP: up.Server.Addr().AsSlice()})
 		default:
 		}
 		if err != nil {

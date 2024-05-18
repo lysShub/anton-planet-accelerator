@@ -20,19 +20,22 @@ func setHdrinclAndBpfFilterLocalPorts(conn *net.IPConn, skipLocalPorts ...uint16
 		return errors.WithStack(err)
 	}
 
-	prog, err := bpfSkipLocalPorts(skipLocalPorts...)
-	if err != nil {
-		return err
+	var prog *unix.SockFprog
+	if rawIns, err := bpf.Assemble(bpfSkipLocalPorts(skipLocalPorts...)); err != nil {
+		return errors.WithStack(err)
+	} else {
+		prog = &unix.SockFprog{
+			Len:    uint16(len(rawIns)),
+			Filter: (*unix.SockFilter)(unsafe.Pointer(&rawIns[0])),
+		}
 	}
 
 	var e error
 	err = raw.Control(func(fd uintptr) {
-		if prog != nil {
-			if e = unix.SetsockoptSockFprog(
-				int(fd), unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, prog,
-			); e != nil {
-				return
-			}
+		if e = unix.SetsockoptSockFprog(
+			int(fd), unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, prog,
+		); e != nil {
+			return
 		}
 		e = unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_HDRINCL, 1)
 	})
@@ -45,11 +48,11 @@ func setHdrinclAndBpfFilterLocalPorts(conn *net.IPConn, skipLocalPorts ...uint16
 
 }
 
-func bpfSkipLocalPorts(ports ...uint16) (*unix.SockFprog, error) {
+func bpfSkipLocalPorts(ports ...uint16) []bpf.Instruction {
 	slices.Sort(ports)
 	ports = slices.Compact(ports)
 	if len(ports) == 0 {
-		return nil, nil
+		return []bpf.Instruction{bpf.RetConstant{Val: 0xffff}}
 	}
 
 	var ins = []bpf.Instruction{
@@ -78,15 +81,5 @@ func bpfSkipLocalPorts(ports ...uint16) (*unix.SockFprog, error) {
 	ins = append(ins,
 		bpf.RetConstant{Val: 0xffff},
 	)
-
-	var prog *unix.SockFprog
-	if rawIns, err := bpf.Assemble(ins); err != nil {
-		return nil, err
-	} else {
-		prog = &unix.SockFprog{
-			Len:    uint16(len(rawIns)),
-			Filter: (*unix.SockFilter)(unsafe.Pointer(&rawIns[0])),
-		}
-	}
-	return prog, nil
+	return ins
 }

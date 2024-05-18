@@ -19,6 +19,7 @@ import (
 	"github.com/lysShub/anton-planet-accelerator/common/control"
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/fatcp"
+	"github.com/lysShub/fatcp/crypto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/mapping/process"
@@ -32,7 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-const warthunder = "aces.exe"
+const warthunder = "curl.exe"
 
 type Client struct {
 	laddr    netip.Addr
@@ -67,7 +68,14 @@ func NewClient(server string, opts ...Option) (*Client, error) {
 		laddr:    defaultAddr(),
 		buffSize: 1536,
 		logger:   slog.New(slog.NewJSONHandler(os.Stdout, nil)),
-		config:   &fatcp.Config{},
+		config: &fatcp.Config{
+			Handshake: &fatcp.Sign{ // todo:
+				Sign: []byte{1, 2},
+				Parser: func(ctx context.Context, b []byte) (crypto.Key, error) {
+					return crypto.Key{1: 1}, nil
+				},
+			},
+		},
 	}
 	var err error
 

@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"github.com/lysShub/fatcp/links"
+	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/test"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -12,10 +14,9 @@ import (
 
 /*
 	约定传输层checksum计算方法：
-		client src-port, PseudoHeader中的src-ip视为0, 然后直接计算checksum,
-		将结果直接存放, 不需要取反。
+		和正常传输层的checksum计算方法保持一致, 只是将src-port, PseudoHeader中的src-ip视为0。
 
-		server将根据client的计算约定, 快速求出真实checksum。
+		server可以根据client的计算约定, 快速求出真实checksum。
 */
 
 func ChecksumClient(ip *packet.Packet) (pkt *packet.Packet) {
@@ -43,7 +44,7 @@ func ChecksumClient(ip *packet.Packet) (pkt *packet.Packet) {
 		hdr.DestinationAddress(),
 		uint16(len(hdr.Payload())),
 	)
-	t.SetChecksum(checksum.Checksum(hdr.Payload(), sum))
+	t.SetChecksum(^checksum.Checksum(hdr.Payload(), sum))
 	t.SetSourcePort(srcPort)
 
 	return ip.SetHead(ip.Head() + int(hdr.HeaderLength()))
@@ -63,8 +64,16 @@ func ChecksumServer(pkt *packet.Packet, down links.Downlink) (ip *packet.Packet)
 	default:
 		panic(fmt.Sprintf("not support protocole %d", down.Proto))
 	}
-	t.SetChecksum(^checksum.Combine(sum, t.Checksum()))
+	t.SetChecksum(^checksum.Combine(sum, ^t.Checksum()))
 	t.SetSourcePort(down.Local.Port())
+	if debug.Debug() {
+		test.ValidTCP(test.T(), pkt.Bytes(), header.PseudoHeaderChecksum(
+			down.Proto,
+			tcpip.AddrFrom4(down.Local.Addr().As4()),
+			tcpip.AddrFrom4(down.Server.Addr().As4()),
+			0,
+		))
+	}
 
 	hdr := header.IPv4(pkt.AttachN(header.IPv4MinimumSize).Bytes())
 	hdr.Encode(&header.IPv4Fields{
