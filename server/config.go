@@ -1,0 +1,53 @@
+package server
+
+import (
+	"log/slog"
+	"os"
+	"time"
+
+	wrap "github.com/lysShub/anton-planet-accelerator/wrap/server"
+	"github.com/lysShub/rawsock"
+)
+
+type Config struct {
+	MaxRecvBuff int
+
+	CertPath string
+
+	HandshakeTimeout time.Duration
+
+	LogPath string
+	logger  *slog.Logger
+
+	RawConnOpts []rawsock.Option
+
+	PcapBuiltinPath string
+}
+
+func (c *Config) init() *Config {
+	if c.HandshakeTimeout <= 0 {
+		c.HandshakeTimeout = time.Second * 3
+	}
+
+	var fh *os.File
+	var err error
+	if c.LogPath == "" {
+		fh = os.Stdout
+	} else {
+		fh, err = os.OpenFile(c.LogPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
+		if err != nil {
+			panic(err)
+		}
+	}
+	c.logger = slog.New(slog.NewJSONHandler(fh, nil))
+
+	return c
+}
+
+func (c *Config) Wrap() wrap.Config {
+	return wrap.Config{
+		Logger: c.logger,
+
+		HandshakeTimeout: c.HandshakeTimeout,
+	}
+}
