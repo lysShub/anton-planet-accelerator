@@ -92,7 +92,7 @@ func (t *Raw) close(cause error) error {
 	})
 }
 func (r *Raw) Recv(pkt *packet.Packet) error {
-	n, err := r.raw.Read(pkt.Bytes())
+	n, _, err := r.raw.ReadFrom(pkt.Bytes())
 	if err != nil {
 		return r.close(err)
 	}
