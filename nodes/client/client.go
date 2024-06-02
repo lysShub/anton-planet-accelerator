@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -47,7 +48,10 @@ type msg struct {
 }
 
 func New(proxyer string, id proto.ID, config *Config) (*Client, error) {
-	var c = &Client{config: config, id: id}
+	var c = &Client{
+		config: config, id: id,
+		msgch: make(chan msg, 8),
+	}
 	var err error
 
 	raddr, err := net.ResolveUDPAddr("udp4", proxyer)
@@ -117,18 +121,53 @@ func (c *Client) PingProxyer(ctx context.Context) (time.Duration, error) {
 		return 0, c.close(err)
 	}
 
+	if _, err := c.readMsg(ctx, proto.PingProxyer); err != nil {
+		return 0, err
+	}
+	return time.Since(start), nil
+}
+
+func (c *Client) readMsg(ctx context.Context, kind proto.Kind) (msg, error) {
 	for {
 		select {
 		case <-ctx.Done():
-			return 0, errors.WithStack(ctx.Err())
+			return msg{}, errors.WithStack(ctx.Err())
 		case msg := <-c.msgch:
-			if msg.header.Kind == proto.PingProxyer {
-				return time.Since(start), nil
+			if msg.header.Kind == kind {
+				return msg, nil
 			} else {
 				c.msgch <- msg
 			}
 		}
 	}
+}
+
+func (c *Client) PacketLossProxyer(ctx context.Context) (float64, error) {
+	var pkt = packet.Make(proto.HeaderSize)
+
+	var hdr = proto.Header{
+		Server: netip.IPv4Unspecified(),
+		Proto:  syscall.IPPROTO_TCP,
+		ID:     c.id,
+		Kind:   proto.PacketLossProxyer,
+	}
+	if err := hdr.Encode(pkt); err != nil {
+		return 0, c.close(err)
+	}
+	if _, err := c.conn.Write(pkt.Bytes()); err != nil {
+		return 0, c.close(err)
+	}
+
+	msg, err := c.readMsg(ctx, proto.PacketLossProxyer)
+	if err != nil {
+		return 0, err
+	}
+
+	pl, err := strconv.ParseFloat(string(msg.data), 64)
+	if err != nil {
+		return 0, errors.WithStack(err)
+	}
+	return pl, nil
 }
 
 func (c *Client) captureService() (_ error) {
@@ -142,6 +181,8 @@ func (c *Client) captureService() (_ error) {
 		n, err := c.capture.Recv(ip.SetData(0xffff).Bytes(), &addr)
 		if err != nil {
 			return c.close(err)
+		} else if n == 0 {
+			continue
 		}
 		ip.SetData(n)
 

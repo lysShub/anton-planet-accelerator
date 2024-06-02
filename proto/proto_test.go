@@ -22,7 +22,7 @@ func Test_Proto(t *testing.T) {
 		Server: test.RandIP(),
 		Proto:  syscall.IPPROTO_UDP,
 		ID:     ID(uint16(rand.Uint32())),
-		Kind:   PlProxyer,
+		Kind:   PacketLossProxyer,
 	}
 	h1.Encode(pkt)
 

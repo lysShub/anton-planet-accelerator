@@ -36,8 +36,8 @@ const (
 	Data
 	PingProxyer
 	PingForward
-	PlProxyer
-	PlForward
+	PacketLossProxyer
+	PacketLossForward
 	_kind_end
 )
 

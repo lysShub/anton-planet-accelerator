@@ -98,7 +98,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 			fmt.Println("client decode", err)
 			continue
 		}
-		pkt.DetachN(proto.HeaderSize)
+		pkt.AttachN(proto.HeaderSize)
 
 		p.clientMu.RLock()
 		cli, has := p.clients[hdr.ID]
@@ -121,7 +121,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 			if err != nil {
 				return p.close(err)
 			}
-		case proto.PlProxyer:
+		case proto.PacketLossProxyer:
 			var pl float64 = 1.11 // todo:
 
 			strPl := strconv.FormatFloat(pl, 'f', 3, 64)
@@ -131,6 +131,10 @@ func (p *Proxyer) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		default:
+			if hdr.Server.IsPrivate() || hdr.Server.IsLoopback() || hdr.Server.IsUnspecified() || hdr.Server.IsMulticast() {
+				// ignore special address
+				continue
+			}
 
 			next, err := p.route.Next(hdr.Server)
 			if err != nil {
