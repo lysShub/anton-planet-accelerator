@@ -98,9 +98,8 @@ func (p *Proxyer) uplinkService() (_ error) {
 		p.clientMu.RLock()
 		cli, has := p.clients[hdr.ID]
 		p.clientMu.RUnlock()
-		if !has {
-			fmt.Println("client invalid id", hdr.ID)
-		} else if !cli.IsValid() {
+
+		if !has || !cli.IsValid() {
 			fmt.Println("new client", caddr.String())
 
 			p.clientMu.Lock()

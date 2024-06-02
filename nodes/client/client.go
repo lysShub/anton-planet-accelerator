@@ -101,7 +101,7 @@ func (c *Client) Start() {
 }
 
 func (c *Client) PingProxyer(ctx context.Context) (time.Duration, error) {
-	var pkt = packet.Make(0, proto.HeaderSize)
+	var pkt = packet.Make(proto.HeaderSize)
 
 	var hdr = proto.Header{
 		Server: netip.IPv4Unspecified(),

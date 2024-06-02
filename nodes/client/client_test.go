@@ -12,6 +12,7 @@ import (
 
 	accelerator "github.com/lysShub/anton-planet-accelerator"
 	"github.com/lysShub/anton-planet-accelerator/nodes/client"
+	"github.com/lysShub/divert-go"
 	"github.com/lysShub/netkit/debug"
 	"github.com/stretchr/testify/require"
 )
@@ -19,6 +20,8 @@ import (
 // go test -race -v -tags "debug" -run TestXxxx
 
 func TestXxxx(t *testing.T) {
+	divert.MustLoad(divert.DLL)
+
 	fmt.Println(debug.Debug(), accelerator.Warthunder)
 
 	config := &client.Config{
@@ -31,13 +34,13 @@ func TestXxxx(t *testing.T) {
 	c.Start()
 
 	for {
-
 		dur, err := c.PingProxyer(context.Background())
 		require.NoError(t, err)
 
 		fmt.Println("ping", dur.String(), time.Now())
-	}
 
+		time.Sleep(time.Second)
+	}
 }
 
 func TestVvvv(t *testing.T) {

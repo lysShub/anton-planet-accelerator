@@ -94,13 +94,15 @@ func IP2Localtion(ip netip.Addr) (geodist.Coord, error) {
 		return geodist.Coord{}, errors.Errorf("http code %d", resp.StatusCode)
 	}
 
-	var ret = struct {
+	type Resp struct {
 		Status  string
 		Country string
 		Lat     float64
 		Lon     float64
 		Query   string
-	}{}
+	}
+
+	var ret Resp
 	err = json.NewDecoder(resp.Body).Decode(&ret)
 	if err != nil {
 		return geodist.Coord{}, err
@@ -108,5 +110,5 @@ func IP2Localtion(ip netip.Addr) (geodist.Coord, error) {
 	if ret.Status != "success" && ret.Query != ip.String() {
 		return geodist.Coord{}, errors.Errorf("invalid response %#v", ret)
 	}
-	return geodist.Coord{Lat: ret.Lat, Lon: ret.Lon}, errors.Errorf("not found %#v", ret)
+	return geodist.Coord{Lat: ret.Lat, Lon: ret.Lon}, nil
 }

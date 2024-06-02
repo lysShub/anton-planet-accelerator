@@ -2,9 +2,12 @@ package proxyer_test
 
 import (
 	"fmt"
+	"net/netip"
 	"testing"
 
 	"github.com/jftuga/geodist"
+	"github.com/lysShub/anton-planet-accelerator/nodes/proxyer"
+	"github.com/stretchr/testify/require"
 )
 
 func TestXxx(t *testing.T) {
@@ -17,4 +20,12 @@ func TestXxx(t *testing.T) {
 	_, dist, err := geodist.VincentyDistance(a, b)
 
 	fmt.Println(dist, err)
+}
+
+func Test_IP2Localtion(t *testing.T) {
+	loc, err := proxyer.IP2Localtion(netip.MustParseAddr("114.114.114.114"))
+	require.NoError(t, err)
+
+	require.InDelta(t, 117, loc.Lon, 15)
+	require.InDelta(t, 30, loc.Lat, 15)
 }
