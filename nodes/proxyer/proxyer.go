@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/jftuga/geodist"
-	accelerator "github.com/lysShub/anton-planet-accelerator"
 	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -55,6 +54,7 @@ func New(addr string, config *Config) (*Proxyer, error) {
 }
 
 func (p *Proxyer) close(cause error) error {
+	cause = errors.WithStack(cause)
 	return p.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
 		if p.conn != nil {
@@ -69,10 +69,9 @@ func (p *Proxyer) close(cause error) error {
 
 func (p *Proxyer) Serve() error {
 	go p.donwlinkService()
-	_ = p.uplinkService()
-	return p.close(nil)
+	return p.close(p.uplinkService())
 }
-func (p *Proxyer) AddForward(addr netip.Addr, loc geodist.Coord) {
+func (p *Proxyer) AddForward(addr netip.AddrPort, loc geodist.Coord) {
 	p.route.AddForward(addr, loc)
 }
 func (p *Proxyer) AddClient(id proto.ID /* key [16]byte */) {
@@ -149,12 +148,11 @@ func (p *Proxyer) uplinkService() (_ error) {
 				fmt.Println("低质路由", hdr.Server, next, dist)
 			}
 
-			_, err = p.sender.WriteToUDPAddrPort(pkt.Bytes(), netip.AddrPortFrom(next, accelerator.DefatultPort))
+			_, err = p.sender.WriteToUDPAddrPort(pkt.Bytes(), next)
 			if err != nil {
 				return p.close(err)
 			}
 		}
-
 	}
 }
 

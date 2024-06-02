@@ -30,7 +30,7 @@ func TestXxxx(t *testing.T) {
 	p, err := proxyer.New(":19986", &config)
 	require.NoError(t, err)
 
-	p.AddForward(netip.MustParseAddr("45.150.236.6"), Moscow)
+	p.AddForward(netip.MustParseAddrPort("45.150.236.6:19986"), Moscow)
 	p.AddClient(1)
 
 	err = p.Serve()

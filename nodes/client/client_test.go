@@ -44,7 +44,7 @@ func TestXxxx(t *testing.T) {
 
 		fmt.Printf("%#v\n\n", stats)
 
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * 4)
 	}
 }
 
