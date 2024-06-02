@@ -30,7 +30,9 @@ func TestXxxx(t *testing.T) {
 	config := &client.Config{
 		MaxRecvBuff: 1536,
 		TcpMssDelta: -64,
+		PcapPath:    "client.pcap",
 	}
+	os.Remove(config.PcapPath)
 
 	c, err := client.New("8.137.91.200:19986", 1, config)
 	require.NoError(t, err)

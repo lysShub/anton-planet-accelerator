@@ -12,7 +12,7 @@ type Config struct {
 	LogPath string
 	logger  *slog.Logger
 
-	PcapBuiltinPath string
+	PcapPath string
 }
 
 func (c *Config) init() *Config {

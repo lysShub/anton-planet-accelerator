@@ -22,6 +22,7 @@ import (
 	"github.com/lysShub/netkit/errorx"
 	mapping "github.com/lysShub/netkit/mapping/process"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/netkit/pcap"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	stdsum "gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -41,6 +42,8 @@ type Client struct {
 
 	msgRecver          chan msg
 	forwardStatsEnable atomic.Bool
+
+	pcap *pcap.Pcap
 
 	closeErr errorx.CloseErr
 }
@@ -80,6 +83,13 @@ func New(proxyer string, id proto.ID, config *Config) (*Client, error) {
 	} else {
 		c.inbound.SetOutbound(false)
 		c.inbound.Network().IfIdx = uint32(ifi.Index)
+	}
+
+	if config.PcapPath != "" {
+		c.pcap, err = pcap.File(config.PcapPath)
+		if err != nil {
+			return nil, c.close(err)
+		}
 	}
 
 	return c, nil
@@ -212,12 +222,19 @@ func (c *Client) captureService() (_ error) {
 		if s.Proto == header.TCPProtocolNumber {
 			fatun.UpdateTcpMssOption(ip.Bytes(), -c.config.TcpMssDelta)
 		}
-		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
-		fmt.Printf("recv %#v\n\n", ip.Bytes())
+		if c.pcap != nil {
+			head := ip.Head()
+			c.pcap.WriteIP(ip.SetHead(0).Bytes())
+			ip.SetHead(head)
+		}
 
 		hdr.Proto = uint8(s.Proto)
 		hdr.Server = s.Dst.Addr()
 		hdr.Encode(ip)
+		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
+
+		fmt.Println("send %#v", ip.Bytes())
+
 		if _, err = c.conn.Write(ip.Bytes()); err != nil {
 			return c.close(err)
 		}
@@ -276,6 +293,10 @@ func (c *Client) injectServic() (_ error) {
 			DstAddr:     tcpip.AddrFrom4(laddr.As4()),
 		})
 		rechecksum(ip)
+
+		if c.pcap != nil {
+			c.pcap.WriteIP(ip)
+		}
 
 		_, err = c.capture.Send(ip, &c.inbound)
 		if err != nil {
