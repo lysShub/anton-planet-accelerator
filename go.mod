@@ -11,7 +11,6 @@ require (
 	github.com/lysShub/netkit v0.0.0-20240601172000-da71e39de8d5
 	github.com/lysShub/rawsock v0.0.0-20240601184254-6561883771fe
 	github.com/pkg/errors v0.9.1
-	github.com/shoenig/test v0.6.4
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.20.0
 	golang.org/x/sys v0.19.0
@@ -26,7 +25,6 @@ require (
 	github.com/go-ping/ping v1.1.0 // indirect
 	github.com/go-text/typesetting v0.1.1 // indirect
 	github.com/google/btree v1.1.2 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.4.0 // indirect
 	github.com/josharian/native v1.0.0 // indirect

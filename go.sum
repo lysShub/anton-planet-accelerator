@@ -44,8 +44,6 @@ github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0/go.mod h1:zJYVVT2jmtg6P3p1VtQj7WsuWi/y4VnjVBn7F8KPB3I=
 github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61 h1:qqarPA8zZe+LnIGHaleqDikaQ3QzvlAfDigXYRrboHU=
 github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61/go.mod h1:OXuD4Q/Y84FyNiYy/sf9RVshvAC5/rvcHA6J7JvvtFM=
-github.com/lysShub/fatun v0.0.0-20240601140114-a0099ac2a562 h1:eCotPBSusSkyikYnrJF4zpRmRIj4qVRlQVjD/cWJrkI=
-github.com/lysShub/fatun v0.0.0-20240601140114-a0099ac2a562/go.mod h1:lRvSDeYsg/5LgfLXvJEyGMu30vs0k0YlW6O1Et8MYNc=
 github.com/lysShub/fatun v0.0.0-20240601183817-825fbf1e595e h1:Bm0IzyosOxPSkzYw/H+am+yNHOX9Le/TeODUdIwv0Wg=
 github.com/lysShub/fatun v0.0.0-20240601183817-825fbf1e595e/go.mod h1:bnUYnGoqJZ1jxPxPuNZChNFL5S9NGoYlF4kUVr6E8iw=
 github.com/lysShub/netkit v0.0.0-20240601172000-da71e39de8d5 h1:8luVz33OX8AUPbfu1OTyNcFKnroS1pXbMVw6w7TWfJ0=
