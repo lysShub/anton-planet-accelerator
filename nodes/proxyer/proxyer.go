@@ -75,6 +75,11 @@ func (p *Proxyer) Serve() error {
 func (p *Proxyer) AddForward(addr netip.Addr, loc geodist.Coord) {
 	p.route.AddForward(addr, loc)
 }
+func (p *Proxyer) AddClient(id proto.ID /* key [16]byte */) {
+	p.clientMu.Lock()
+	defer p.clientMu.Unlock()
+	p.clients[id] = netip.AddrPort{}
+}
 
 func (p *Proxyer) uplinkService() (_ error) {
 	var (

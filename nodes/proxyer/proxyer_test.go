@@ -25,6 +25,7 @@ func TestXxxx(t *testing.T) {
 	require.NoError(t, err)
 
 	// p.AddForward()
+	p.AddClient(1)
 
 	err = p.Serve()
 	require.NoError(t, err)
