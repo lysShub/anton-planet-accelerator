@@ -49,6 +49,7 @@ var ip4zero = tcpip.AddrFrom4([4]byte{})
 
 func ChecksumForward(pkt *packet.Packet, proto uint8, loc netip.AddrPort) {
 	sum := checksum.Checksum(loc.Addr().AsSlice(), loc.Port())
+	fmt.Println("loc", loc)
 
 	var t header.Transport
 	switch proto {

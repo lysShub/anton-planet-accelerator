@@ -213,6 +213,7 @@ func (c *Client) captureService() (_ error) {
 			fatun.UpdateTcpMssOption(ip.Bytes(), -c.config.TcpMssDelta)
 		}
 		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
+		fmt.Printf("recv %#v\n\n", ip.Bytes())
 
 		hdr.Proto = uint8(s.Proto)
 		hdr.Server = s.Dst.Addr()

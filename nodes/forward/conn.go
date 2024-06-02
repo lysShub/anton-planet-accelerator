@@ -4,6 +4,7 @@
 package forward
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -20,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/bpf"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -32,7 +32,6 @@ type Raw struct {
 	header                  proto.Header
 	proxyer                 netip.AddrPort
 	laddr                   netip.AddrPort
-	laddrsum                uint16
 	processPort, serverPort uint16
 
 	closeErr errorx.CloseErr
@@ -63,7 +62,6 @@ func NewRaw(hdr proto.Header, proxyer netip.AddrPort, firsPacket *packet.Packet)
 	r.header = hdr
 	r.proxyer = proxyer
 	r.laddr = netip.MustParseAddrPort(r.l.Addr().String())
-	r.laddrsum = checksum.Checksum(r.laddr.Addr().AsSlice(), r.laddr.Port())
 	r.processPort = r.transport(firsPacket).SourcePort()
 	r.serverPort = r.transport(firsPacket).DestinationPort()
 
@@ -72,6 +70,7 @@ func NewRaw(hdr proto.Header, proxyer netip.AddrPort, firsPacket *packet.Packet)
 	if err != nil {
 		return nil, r.close(errors.WithStack(err))
 	}
+	r.laddr = netip.AddrPortFrom(netip.MustParseAddr(r.raw.LocalAddr().String()), r.laddr.Port())
 	if err := bpfFilterPort(r.raw, r.serverPort, r.laddr.Port()); err != nil {
 		return nil, r.close(err)
 	}
@@ -109,6 +108,8 @@ func (r *Raw) Recv(pkt *packet.Packet) error {
 	return nil
 }
 func (r *Raw) Send(pkt *packet.Packet) error {
+	fmt.Printf("recv %#v\n\n", pkt.Bytes())
+
 	nodes.ChecksumForward(pkt, r.header.Proto, r.laddr)
 	if debug.Debug() {
 		// todo
