@@ -4,9 +4,12 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/netip"
+	"syscall"
+	"time"
 
 	accelerator "github.com/lysShub/anton-planet-accelerator"
 	proto "github.com/lysShub/anton-planet-accelerator/proto"
@@ -33,7 +36,14 @@ type Client struct {
 	capture *divert.Handle
 	inbound divert.Address
 
+	msgch chan msg
+
 	closeErr errorx.CloseErr
+}
+
+type msg struct {
+	header proto.Header
+	data   []byte
 }
 
 func New(proxyer string, id proto.ID, config *Config) (*Client, error) {
@@ -69,6 +79,7 @@ func New(proxyer string, id proto.ID, config *Config) (*Client, error) {
 }
 
 func (c *Client) close(cause error) error {
+	cause = errors.WithStack(cause)
 	return c.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
 		if c.conn != nil {
@@ -82,6 +93,42 @@ func (c *Client) close(cause error) error {
 		}
 		return errs
 	})
+}
+
+func (c *Client) Start() {
+	go c.captureService()
+	go c.injectServic()
+}
+
+func (c *Client) PingProxyer(ctx context.Context) (time.Duration, error) {
+	var pkt = packet.Make(0, proto.HeaderSize)
+
+	var hdr = proto.Header{
+		Server: netip.IPv4Unspecified(),
+		Proto:  syscall.IPPROTO_TCP,
+		ID:     c.id,
+		Kind:   proto.PingProxyer,
+	}
+	if err := hdr.Encode(pkt); err != nil {
+		return 0, c.close(err)
+	}
+	start := time.Now()
+	if _, err := c.conn.Write(pkt.Bytes()); err != nil {
+		return 0, c.close(err)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return 0, errors.WithStack(ctx.Err())
+		case msg := <-c.msgch:
+			if msg.header.Kind == proto.PingProxyer {
+				return time.Since(start), nil
+			} else {
+				c.msgch <- msg
+			}
+		}
+	}
 }
 
 func (c *Client) captureService() (_ error) {
@@ -176,7 +223,12 @@ func (c *Client) injectServic() (_ error) {
 		}
 
 		if hdr.Kind != proto.Data {
-			fmt.Println("其他操作")
+			select {
+			case c.msgch <- msg{header: *hdr, data: pkt.Bytes()}:
+			default:
+				fmt.Println("c.msgch 溢出")
+			}
+			continue
 		}
 
 		ip := header.IPv4(pkt.AppendN(header.IPv4MinimumSize).Bytes())
@@ -218,7 +270,6 @@ func rechecksum(ip header.IPv4) {
 	default:
 		panic(fmt.Sprintf("not support protocol %d", proto))
 	}
-
 }
 
 // todo: optimzie

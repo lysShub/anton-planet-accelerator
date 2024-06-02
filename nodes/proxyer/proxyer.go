@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"sync"
 
+	"github.com/jftuga/geodist"
 	accelerator "github.com/lysShub/anton-planet-accelerator"
 	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/errorx"
@@ -70,6 +72,9 @@ func (p *Proxyer) Serve() error {
 	_ = p.uplinkService()
 	return p.close(nil)
 }
+func (p *Proxyer) AddForward(addr netip.Addr, loc geodist.Coord) {
+	p.route.AddForward(addr, loc)
+}
 
 func (p *Proxyer) uplinkService() (_ error) {
 	var (
@@ -101,8 +106,20 @@ func (p *Proxyer) uplinkService() (_ error) {
 			p.clientMu.Lock()
 			p.clients[hdr.ID] = caddr
 			p.clientMu.Unlock()
-		} else if hdr.Kind != proto.Data {
-			fmt.Println("其他操作")
+		} else if hdr.Kind == proto.PingProxyer {
+			_, err = p.conn.WriteToUDPAddrPort(pkt.Bytes(), caddr)
+			if err != nil {
+				return p.close(err)
+			}
+		} else if hdr.Kind == proto.PlProxyer {
+			var pl float64 = 1.11 // todo:
+
+			strPl := strconv.FormatFloat(pl, 'f', 3, 64)
+			pkt.Append([]byte(strPl)...)
+			_, err = p.conn.WriteToUDPAddrPort(pkt.Bytes(), caddr)
+			if err != nil {
+				return p.close(err)
+			}
 		}
 
 		next, err := p.route.Next(hdr.Server)

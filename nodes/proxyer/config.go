@@ -3,30 +3,18 @@ package proxyer
 import (
 	"log/slog"
 	"os"
-	"time"
-
-	"github.com/lysShub/rawsock"
 )
 
 type Config struct {
 	MaxRecvBuff int
 
-	CertPath string
-
-	HandshakeTimeout time.Duration
-
 	LogPath string
 	logger  *slog.Logger
-
-	RawConnOpts []rawsock.Option
 
 	PcapBuiltinPath string
 }
 
 func (c *Config) init() *Config {
-	if c.HandshakeTimeout <= 0 {
-		c.HandshakeTimeout = time.Second * 3
-	}
 
 	var fh *os.File
 	var err error

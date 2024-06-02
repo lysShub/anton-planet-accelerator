@@ -7,7 +7,7 @@ require (
 	gioui.org v0.6.0
 	github.com/jftuga/geodist v1.0.0
 	github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61
-	github.com/lysShub/fatun v0.0.0-20240601140114-a0099ac2a562
+	github.com/lysShub/fatun v0.0.0-20240601183817-825fbf1e595e
 	github.com/lysShub/netkit v0.0.0-20240601172000-da71e39de8d5
 	github.com/lysShub/rawsock v0.0.0-20240601184254-6561883771fe
 	github.com/pkg/errors v0.9.1

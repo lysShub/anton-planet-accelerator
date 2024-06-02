@@ -34,8 +34,10 @@ const (
 
 	_kind_start Kind = iota
 	Data
-	PL
-	Ping
+	PingProxyer
+	PingForward
+	PlProxyer
+	PlForward
 	_kind_end
 )
 
