@@ -25,15 +25,15 @@ import (
 )
 
 type Raw struct {
-	*net.IPConn
+	raw       *net.IPConn
 	l         listener
 	transport func(*packet.Packet) header.Transport
 
-	header      proto.Header
-	proxyer     netip.AddrPort
-	laddr       netip.AddrPort
-	laddrsum    uint16
-	processPort uint16
+	header                  proto.Header
+	proxyer                 netip.AddrPort
+	laddr                   netip.AddrPort
+	laddrsum                uint16
+	processPort, serverPort uint16
 
 	closeErr errorx.CloseErr
 }
@@ -65,14 +65,14 @@ func NewRaw(hdr proto.Header, proxyer netip.AddrPort, firsPacket *packet.Packet)
 	r.laddr = netip.MustParseAddrPort(r.l.Addr().String())
 	r.laddrsum = checksum.Checksum(r.laddr.Addr().AsSlice(), r.laddr.Port())
 	r.processPort = r.transport(firsPacket).SourcePort()
+	r.serverPort = r.transport(firsPacket).DestinationPort()
 
 	network := "ip4:" + r.LocalAddr().Network()
-	r.IPConn, err = net.DialIP(network, nil, &net.IPAddr{IP: hdr.Server.AsSlice()})
+	r.raw, err = net.DialIP(network, nil, &net.IPAddr{IP: hdr.Server.AsSlice()})
 	if err != nil {
 		return nil, r.close(errors.WithStack(err))
 	}
-	dstPort := r.transport(firsPacket).DestinationPort()
-	if err := bpfFilterPort(r.IPConn, dstPort, r.laddr.Port()); err != nil {
+	if err := bpfFilterPort(r.raw, r.serverPort, r.laddr.Port()); err != nil {
 		return nil, r.close(err)
 	}
 
@@ -83,8 +83,8 @@ func (t *Raw) close(cause error) error {
 	cause = errors.WithStack(cause)
 	return t.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
-		if t.IPConn != nil {
-			errs = append(errs, t.IPConn.Close())
+		if t.raw != nil {
+			errs = append(errs, t.raw.Close())
 		}
 		if t.l != nil {
 			errs = append(errs, t.l.Close())
@@ -93,7 +93,7 @@ func (t *Raw) close(cause error) error {
 	})
 }
 func (r *Raw) Recv(pkt *packet.Packet) error {
-	n, _, err := r.IPConn.ReadFromIP(pkt.Bytes())
+	n, _, err := r.raw.ReadFromIP(pkt.Bytes())
 	if err != nil {
 		return r.close(err)
 	}
@@ -128,12 +128,16 @@ func (r *Raw) Send(pkt *packet.Packet) error {
 		))
 	}
 
-	_, err := r.IPConn.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: r.header.Server.AsSlice()})
+	_, err := r.raw.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: r.header.Server.AsSlice()})
 	return errors.WithStack(err)
 }
 func (r *Raw) Header() proto.Header    { return r.header }
 func (r *Raw) Proxyer() netip.AddrPort { return r.proxyer }
-func (r *Raw) Close() error            { return r.close(nil) }
+func (r *Raw) LocalAddr() net.Addr     { return r.l.Addr() }
+func (r *Raw) RemoteAddrPort() netip.AddrPort {
+	return netip.AddrPortFrom(r.header.Server, r.serverPort)
+}
+func (r *Raw) Close() error { return r.close(nil) }
 
 type udpLister struct {
 	*net.UDPConn
