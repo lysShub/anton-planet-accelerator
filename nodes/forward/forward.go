@@ -61,6 +61,7 @@ func (f *Forward) close(cause error) error {
 }
 
 func (f *Forward) Serve() error {
+	fmt.Println("启动", f.conn.LocalAddr().String())
 	return f.recvService()
 }
 
@@ -81,7 +82,7 @@ func (f *Forward) recvService() (err error) {
 			fmt.Println("decode", err)
 			continue
 		} else if hdr.Kind != proto.Data {
-			fmt.Println("其他查找")
+			fmt.Println("其他操作")
 		}
 
 		f.linkMu.RLock()
@@ -93,6 +94,8 @@ func (f *Forward) recvService() (err error) {
 				return f.close(err)
 			}
 
+			fmt.Println("new conn", hdr.ID, hdr.Server)
+
 			f.linkMu.Lock()
 			f.links[hdr] = raw
 			f.linkMu.Unlock()
@@ -103,7 +106,6 @@ func (f *Forward) recvService() (err error) {
 			f.deleteRaw(raw)
 		}
 	}
-
 }
 
 func (f *Forward) sendService(raw *Raw) (_ error) {

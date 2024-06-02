@@ -4,7 +4,9 @@
 package client_test
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -33,11 +35,12 @@ func TestXxxx(t *testing.T) {
 	c.Start()
 
 	for {
+		stats, err := c.NetworkStats(time.Second)
+		if !errors.Is(err, os.ErrDeadlineExceeded) {
+			require.NoError(t, err)
+		}
 
-		dur, err := c.NetworkStats(time.Second)
-		require.NoError(t, err)
-
-		fmt.Println("pl", dur, time.Now())
+		fmt.Printf("%#v\n\n", stats)
 
 		time.Sleep(time.Second)
 	}

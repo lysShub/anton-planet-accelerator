@@ -4,10 +4,10 @@
 package client
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
 	"slices"
 	"strconv"
 	"sync/atomic"
@@ -138,7 +138,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (NetworkStats, error) {
 		for {
 			select {
 			case <-timer:
-				return stats, errors.WithStack(context.Canceled)
+				return stats, errors.WithStack(os.ErrDeadlineExceeded)
 			case msg := <-c.msgRecver:
 				switch msg.header.Kind {
 				case proto.PingProxyer:
