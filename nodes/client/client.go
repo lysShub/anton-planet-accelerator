@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -37,7 +39,8 @@ type Client struct {
 	capture *divert.Handle
 	inbound divert.Address
 
-	msgch chan msg
+	msgRecver          chan msg
+	forwardStatsEnable atomic.Bool
 
 	closeErr errorx.CloseErr
 }
@@ -50,7 +53,7 @@ type msg struct {
 func New(proxyer string, id proto.ID, config *Config) (*Client, error) {
 	var c = &Client{
 		config: config, id: id,
-		msgch: make(chan msg, 8),
+		msgRecver: make(chan msg, 8),
 	}
 	var err error
 
@@ -104,70 +107,65 @@ func (c *Client) Start() {
 	go c.injectServic()
 }
 
-func (c *Client) PingProxyer(ctx context.Context) (time.Duration, error) {
-	var pkt = packet.Make(proto.HeaderSize)
-
-	var hdr = proto.Header{
-		Server: netip.IPv4Unspecified(),
-		Proto:  syscall.IPPROTO_TCP,
-		ID:     c.id,
-		Kind:   proto.PingProxyer,
-	}
-	if err := hdr.Encode(pkt); err != nil {
-		return 0, c.close(err)
-	}
-	start := time.Now()
-	if _, err := c.conn.Write(pkt.Bytes()); err != nil {
-		return 0, c.close(err)
-	}
-
-	if _, err := c.readMsg(ctx, proto.PingProxyer); err != nil {
-		return 0, err
-	}
-	return time.Since(start), nil
+type NetworkStats struct {
+	PingProxyer       time.Duration
+	PingForward       time.Duration
+	PacketLossProxyer float64
+	PacketLossForward float64
 }
 
-func (c *Client) readMsg(ctx context.Context, kind proto.Kind) (msg, error) {
-	for {
-		select {
-		case <-ctx.Done():
-			return msg{}, errors.WithStack(ctx.Err())
-		case msg := <-c.msgch:
-			if msg.header.Kind == kind {
-				return msg, nil
-			} else {
-				c.msgch <- msg
+func (c *Client) NetworkStats(timeout time.Duration) (NetworkStats, error) {
+	for _, kind := range []proto.Kind{proto.PingProxyer, proto.PacketLossProxyer} {
+		var pkt = packet.Make(proto.HeaderSize)
+		var hdr = proto.Header{
+			Server: netip.IPv4Unspecified(),
+			Proto:  syscall.IPPROTO_TCP,
+			ID:     c.id,
+			Kind:   kind,
+		}
+		if err := hdr.Encode(pkt); err != nil {
+			return NetworkStats{}, c.close(err)
+		}
+		if _, err := c.conn.Write(pkt.Bytes()); err != nil {
+			return NetworkStats{}, c.close(err)
+		}
+	}
+	start := time.Now()
+
+	var stats NetworkStats
+	var timer = time.After(timeout)
+	for i := 0; i < 4; {
+		for {
+			select {
+			case <-timer:
+				return stats, errors.WithStack(context.Canceled)
+			case msg := <-c.msgRecver:
+				switch msg.header.Kind {
+				case proto.PingProxyer:
+					stats.PingProxyer = time.Since(start)
+				case proto.PingForward:
+					stats.PingForward = time.Since(start)
+				case proto.PacketLossProxyer:
+					pl, err := strconv.ParseFloat(string(msg.data), 64)
+					if err != nil {
+						return stats, errors.WithStack(err)
+					}
+					stats.PacketLossProxyer = pl
+				case proto.PacketLossForward:
+					pl, err := strconv.ParseFloat(string(msg.data), 64)
+					if err != nil {
+						return stats, errors.WithStack(err)
+					}
+					stats.PacketLossProxyer = pl
+				default:
+					c.msgRecver <- msg
+					continue
+				}
+				i++
 			}
 		}
 	}
-}
-
-func (c *Client) PacketLossProxyer(ctx context.Context) (float64, error) {
-	var pkt = packet.Make(proto.HeaderSize)
-
-	var hdr = proto.Header{
-		Server: netip.IPv4Unspecified(),
-		Proto:  syscall.IPPROTO_TCP,
-		ID:     c.id,
-		Kind:   proto.PacketLossProxyer,
-	}
-	if err := hdr.Encode(pkt); err != nil {
-		return 0, c.close(err)
-	}
-	if _, err := c.conn.Write(pkt.Bytes()); err != nil {
-		return 0, c.close(err)
-	}
-
-	msg, err := c.readMsg(ctx, proto.PacketLossProxyer)
-	if err != nil {
-		return 0, err
-	}
-
-	pl, err := strconv.ParseFloat(string(msg.data), 64)
-	if err != nil {
-		return 0, errors.WithStack(err)
-	}
-	return pl, nil
+	return stats, nil
 }
 
 func (c *Client) captureService() (_ error) {
@@ -178,7 +176,7 @@ func (c *Client) captureService() (_ error) {
 	)
 
 	for {
-		n, err := c.capture.Recv(ip.SetData(0xffff).Bytes(), &addr)
+		n, err := c.capture.Recv(ip.Sets(0, 0xffff).Bytes(), &addr)
 		if err != nil {
 			return c.close(err)
 		} else if n == 0 {
@@ -236,6 +234,18 @@ func (c *Client) captureService() (_ error) {
 		if _, err = c.conn.Write(ip.Bytes()); err != nil {
 			return c.close(err)
 		}
+
+		if c.forwardStatsEnable.Swap(false) {
+			for _, kind := range []proto.Kind{proto.PingForward, proto.PacketLossForward} {
+				hdr.Kind = kind
+				if err := hdr.Encode(ip.Sets(proto.HeaderSize, 0xffff)); err != nil {
+					return c.close(err)
+				}
+				if _, err = c.conn.Write(ip.Bytes()); err != nil {
+					return c.close(err)
+				}
+			}
+		}
 	}
 }
 
@@ -265,7 +275,7 @@ func (c *Client) injectServic() (_ error) {
 
 		if hdr.Kind != proto.Data {
 			select {
-			case c.msgch <- msg{header: *hdr, data: pkt.Bytes()}:
+			case c.msgRecver <- msg{header: *hdr, data: slices.Clone(pkt.Bytes())}:
 			default:
 				fmt.Println("c.msgch 溢出")
 			}

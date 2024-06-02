@@ -4,7 +4,6 @@
 package client_test
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"testing"
@@ -34,10 +33,11 @@ func TestXxxx(t *testing.T) {
 	c.Start()
 
 	for {
-		dur, err := c.PingProxyer(context.Background())
+
+		dur, err := c.NetworkStats(time.Second)
 		require.NoError(t, err)
 
-		fmt.Println("ping", dur.String(), time.Now())
+		fmt.Println("pl", dur, time.Now())
 
 		time.Sleep(time.Second)
 	}
