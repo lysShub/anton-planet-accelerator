@@ -5,7 +5,6 @@ import (
 	"os"
 	"time"
 
-	wrap "github.com/lysShub/anton-planet-accelerator/wrap/server"
 	"github.com/lysShub/rawsock"
 )
 
@@ -42,12 +41,4 @@ func (c *Config) init() *Config {
 	c.logger = slog.New(slog.NewJSONHandler(fh, nil))
 
 	return c
-}
-
-func (c *Config) Wrap() wrap.Config {
-	return wrap.Config{
-		Logger: c.logger,
-
-		HandshakeTimeout: c.HandshakeTimeout,
-	}
 }
