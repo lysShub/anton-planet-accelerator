@@ -126,6 +126,8 @@ func (f *Forward) sendService(raw *Raw) (_ error) {
 }
 
 func (f *Forward) deleteRaw(raw *Raw) error {
+	fmt.Println("delect raw", raw.LocalAddr(), raw.RemoteAddrPort())
+
 	f.linkMu.Lock()
 	delete(f.links, raw.Header())
 	f.linkMu.Unlock()

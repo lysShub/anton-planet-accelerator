@@ -125,7 +125,7 @@ func (r *Raw) Send(pkt *packet.Packet) error {
 		))
 	}
 
-	_, err := r.raw.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: r.header.Server.AsSlice()})
+	_, err := r.raw.Write(pkt.Bytes())
 	return errors.WithStack(err)
 }
 func (r *Raw) Header() proto.Header    { return r.header }
