@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	MaxRecvBuff int
+	TcpMssDelta int
 
 	CertPath string
 

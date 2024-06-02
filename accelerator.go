@@ -1,5 +1,6 @@
 package accelerator
 
-var (
-	Warthunder = "aces.exe"
+const (
+	Warthunder   = "aces.exe"
+	DefatultPort = 19986
 )

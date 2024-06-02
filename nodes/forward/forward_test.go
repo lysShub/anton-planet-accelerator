@@ -1,4 +1,4 @@
-package main_test
+package forward_test
 
 import (
 	"testing"
