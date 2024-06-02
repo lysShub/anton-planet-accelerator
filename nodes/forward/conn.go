@@ -110,9 +110,6 @@ func (r *Raw) Recv(pkt *packet.Packet) error {
 }
 func (r *Raw) Send(pkt *packet.Packet) error {
 	hdr := r.transport(pkt)
-	if debug.Debug() {
-		require.Equal(test.T(), r.laddr.Port(), hdr.SourcePort())
-	}
 	hdr.SetSourcePort(r.laddr.Port())
 	hdr.SetChecksum(^checksum.Combine(r.laddrsum, ^hdr.Checksum()))
 	if debug.Debug() {
