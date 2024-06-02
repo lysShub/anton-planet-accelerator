@@ -114,7 +114,7 @@ func (f *Forward) sendService(raw *Raw) (_ error) {
 	)
 
 	for {
-		if err := raw.Recv(pkt); err != nil {
+		if err := raw.Recv(pkt.Sets(64, 0xffff)); err != nil {
 			return f.deleteRaw(raw)
 		}
 
