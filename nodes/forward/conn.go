@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
@@ -19,7 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/bpf"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -109,20 +109,9 @@ func (r *Raw) Recv(pkt *packet.Packet) error {
 	return nil
 }
 func (r *Raw) Send(pkt *packet.Packet) error {
-	hdr := r.transport(pkt)
-	hdr.SetSourcePort(r.laddr.Port())
-	hdr.SetChecksum(^checksum.Combine(r.laddrsum, ^hdr.Checksum()))
+	nodes.ChecksumForward(pkt, r.header.Proto, r.laddr)
 	if debug.Debug() {
-		proto := header.TCPProtocolNumber
-		if header.UDP(pkt.Bytes()).Length() == uint16(pkt.Data()) {
-			proto = header.UDPProtocolNumber
-		}
-		test.ValidTCP(test.T(), pkt.Bytes(), header.PseudoHeaderChecksum(
-			proto,
-			tcpip.AddrFrom4(r.laddr.Addr().As4()),
-			tcpip.AddrFrom4(r.header.Server.As4()),
-			0,
-		))
+		// todo
 	}
 
 	_, err := r.raw.Write(pkt.Bytes())

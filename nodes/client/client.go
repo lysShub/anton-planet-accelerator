@@ -15,6 +15,7 @@ import (
 	"time"
 
 	accelerator "github.com/lysShub/anton-planet-accelerator"
+	"github.com/lysShub/anton-planet-accelerator/nodes"
 	proto "github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/fatun"
@@ -23,7 +24,6 @@ import (
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	stdsum "gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -209,24 +209,10 @@ func (c *Client) captureService() (_ error) {
 			continue
 		}
 
-		var t header.Transport
 		if s.Proto == header.TCPProtocolNumber {
 			fatun.UpdateTcpMssOption(ip.Bytes(), -c.config.TcpMssDelta)
-			t = header.TCP(ip.Bytes())
-		} else {
-			t = header.UDP(ip.Bytes())
 		}
-		srcPort := t.SourcePort()
-		t.SetSourcePort(0)
-		t.SetChecksum(0)
-		sum := header.PseudoHeaderChecksum(
-			s.Proto,
-			ip4zero,
-			tcpip.AddrFrom4(s.Dst.Addr().As4()),
-			uint16(ip.Data()),
-		)
-		t.SetChecksum(^checksum.Checksum(ip.Bytes(), sum))
-		t.SetSourcePort(srcPort)
+		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
 
 		hdr.Proto = uint8(s.Proto)
 		hdr.Server = s.Dst.Addr()
@@ -248,8 +234,6 @@ func (c *Client) captureService() (_ error) {
 		}
 	}
 }
-
-var ip4zero = tcpip.AddrFrom4([4]byte{})
 
 func (c *Client) injectServic() (_ error) {
 	var (
