@@ -100,7 +100,7 @@ func (r *Raw) Recv(pkt *packet.Packet) error {
 
 	hdr := header.TCP(pkt.Bytes())
 	if debug.Debug() {
-		require.Equal(test.T(), r.laddr.Port(), hdr.SourcePort())
+		require.Equal(test.T(), r.laddr.Port(), hdr.DestinationPort())
 	}
 	hdr.SetDestinationPort(r.processPort)
 
