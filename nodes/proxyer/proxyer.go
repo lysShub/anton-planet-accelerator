@@ -99,18 +99,24 @@ func (p *Proxyer) uplinkService() (_ error) {
 		cli, has := p.clients[hdr.ID]
 		p.clientMu.RUnlock()
 
-		if !has || !cli.IsValid() {
+		if !has {
+			fmt.Println("无效的id", hdr)
+			continue
+		} else if !cli.IsValid() {
 			fmt.Println("new client", caddr.String())
 
 			p.clientMu.Lock()
 			p.clients[hdr.ID] = caddr
 			p.clientMu.Unlock()
-		} else if hdr.Kind == proto.PingProxyer {
+		}
+
+		switch hdr.Kind {
+		case proto.PingProxyer:
 			_, err = p.conn.WriteToUDPAddrPort(pkt.Bytes(), caddr)
 			if err != nil {
 				return p.close(err)
 			}
-		} else if hdr.Kind == proto.PlProxyer {
+		case proto.PlProxyer:
 			var pl float64 = 1.11 // todo:
 
 			strPl := strconv.FormatFloat(pl, 'f', 3, 64)
@@ -119,18 +125,20 @@ func (p *Proxyer) uplinkService() (_ error) {
 			if err != nil {
 				return p.close(err)
 			}
+		default:
+
+			next, err := p.route.Next(hdr.Server)
+			if err != nil {
+				fmt.Println("route", err)
+				continue
+			}
+
+			_, err = p.sender.WriteToUDPAddrPort(pkt.Bytes(), netip.AddrPortFrom(next, accelerator.DefatultPort))
+			if err != nil {
+				return p.close(err)
+			}
 		}
 
-		next, err := p.route.Next(hdr.Server)
-		if err != nil {
-			fmt.Println("route", err)
-			continue
-		}
-
-		_, err = p.sender.WriteToUDPAddrPort(pkt.Bytes(), netip.AddrPortFrom(next, accelerator.DefatultPort))
-		if err != nil {
-			return p.close(err)
-		}
 	}
 }
 
