@@ -3,6 +3,7 @@ package proxyer
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/netip"
 	"sync"
@@ -66,10 +67,11 @@ func (r *Route) queryForward(ip netip.Addr) (next netip.Addr, dist float64, err 
 	r.nextMu.RLock()
 	defer r.nextMu.RUnlock()
 
+	dist = math.MaxFloat64
 	for k, e := range r.nexts {
-		_, dist, err := geodist.VincentyDistance(loc, k)
-		if err == nil && 0 < dist && dist < dist {
-			next, dist = e, dist
+		_, d, err := geodist.VincentyDistance(loc, k)
+		if err == nil && d < dist {
+			next, dist = e, d
 		}
 	}
 	if !next.IsValid() {

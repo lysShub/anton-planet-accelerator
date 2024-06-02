@@ -23,6 +23,8 @@ import (
 func TestXxxx(t *testing.T) {
 	divert.MustLoad(divert.DLL)
 
+	accelerator.Warthunder = "curl.exe"
+
 	fmt.Println(debug.Debug(), accelerator.Warthunder)
 
 	config := &client.Config{
