@@ -93,7 +93,7 @@ func (t *Raw) close(cause error) error {
 	})
 }
 func (r *Raw) Recv(pkt *packet.Packet) error {
-	n, _, err := r.raw.ReadFromIP(pkt.Bytes())
+	n, err := r.raw.Read(pkt.Bytes())
 	if err != nil {
 		return r.close(err)
 	}
@@ -163,18 +163,18 @@ func bpfFilterAll(raw raw) error {
 }
 
 func bpfFilterPort(raw raw, srcPort, dstPort uint16) error {
-	const srcPortOffset = header.TCPSrcPortOffset // tcp/udp is same
-	const dstPortOffset = header.TCPDstPortOffset
+	const SrcPortOffset = header.TCPSrcPortOffset // tcp/udp is same
+	const DstPortOffset = header.TCPDstPortOffset
 
 	var ins = []bpf.Instruction{
 		// store IPv4HdrLen regX
 		bpf.LoadMemShift{Off: 0},
 
-		bpf.LoadIndirect{Off: srcPortOffset, Size: 2},
+		bpf.LoadIndirect{Off: SrcPortOffset, Size: 2},
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(srcPort), SkipTrue: 1},
 		bpf.RetConstant{Val: 0},
 
-		bpf.LoadIndirect{Off: dstPortOffset, Size: 2},
+		bpf.LoadIndirect{Off: DstPortOffset, Size: 2},
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dstPort), SkipTrue: 1},
 		bpf.RetConstant{Val: 0},
 
@@ -204,8 +204,7 @@ func setBpf(raw raw, ins []bpf.Instruction) error {
 		e = unix.SetsockoptSockFprog(int(fd), unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, prog)
 	}); err != nil {
 		return errors.WithStack(err)
-	}
-	if e != nil {
+	} else if e != nil {
 		return errors.WithStack(e)
 	}
 	return nil
