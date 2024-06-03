@@ -12,7 +12,6 @@ import (
 	"unsafe"
 
 	"github.com/lysShub/anton-planet-accelerator/nodes"
-	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -25,31 +24,30 @@ import (
 )
 
 type Raw struct {
-	raw       *net.IPConn
-	l         listener
-	transport func(*packet.Packet) header.Transport
+	raw *net.IPConn
+	l   listener
 
-	header                  proto.Header
-	proxyer                 netip.AddrPort
-	laddr                   netip.AddrPort
-	processPort, serverPort uint16
+	link    link
+	proxyer netip.AddrPort
+	laddr   netip.AddrPort
 
 	closeErr errorx.CloseErr
 }
 
-func NewRaw(hdr proto.Header, proxyer netip.AddrPort, firsPacket *packet.Packet) (*Raw, error) {
+func NewRaw(link link, proxyer netip.AddrPort) (*Raw, error) {
 	var (
-		r   = &Raw{}
+		r = &Raw{
+			link:    link,
+			proxyer: proxyer,
+		}
 		err error
 	)
 
-	switch hdr.Proto {
+	switch link.header.Proto {
 	case syscall.IPPROTO_TCP:
 		r.l, err = net.ListenTCP("tcp4", nil)
-		r.transport = func(p *packet.Packet) header.Transport { return header.TCP(p.Bytes()) }
 	case syscall.IPPROTO_UDP:
 		r.l, err = wrapUDPLister(net.ListenUDP("udp4", nil))
-		r.transport = func(p *packet.Packet) header.Transport { return header.UDP(p.Bytes()) }
 	default:
 		panic("")
 	}
@@ -59,22 +57,17 @@ func NewRaw(hdr proto.Header, proxyer netip.AddrPort, firsPacket *packet.Packet)
 	if err := bpfFilterAll(r.l); err != nil {
 		return nil, r.close(err)
 	}
-	r.header = hdr
-	r.proxyer = proxyer
-	r.laddr = netip.MustParseAddrPort(r.l.Addr().String())
-	r.processPort = r.transport(firsPacket).SourcePort()
-	r.serverPort = r.transport(firsPacket).DestinationPort()
+	locPort := netip.MustParseAddrPort(r.l.Addr().String()).Port()
 
 	network := "ip4:" + r.LocalAddr().Network()
-	r.raw, err = net.DialIP(network, nil, &net.IPAddr{IP: hdr.Server.AsSlice()})
+	r.raw, err = net.DialIP(network, nil, &net.IPAddr{IP: link.header.Server.AsSlice()})
 	if err != nil {
 		return nil, r.close(errors.WithStack(err))
 	}
-	r.laddr = netip.AddrPortFrom(netip.MustParseAddr(r.raw.LocalAddr().String()), r.laddr.Port())
-	if err := bpfFilterPort(r.raw, r.serverPort, r.laddr.Port()); err != nil {
+	r.laddr = netip.AddrPortFrom(netip.MustParseAddr(r.raw.LocalAddr().String()), locPort)
+	if err := bpfFilterPort(r.raw, r.link.serverPort, locPort); err != nil {
 		return nil, r.close(err)
 	}
-
 	return r, nil
 }
 
@@ -102,15 +95,15 @@ func (r *Raw) Recv(pkt *packet.Packet) error {
 	if debug.Debug() {
 		require.Equal(test.T(), r.laddr.Port(), hdr.DestinationPort())
 	}
-	hdr.SetDestinationPort(r.processPort)
+	hdr.SetDestinationPort(r.link.processPort)
 
-	r.header.Encode(pkt)
+	r.link.header.Encode(pkt)
 	return nil
 }
 func (r *Raw) Send(pkt *packet.Packet) error {
 	fmt.Printf("recv %#v\n\n", pkt.Bytes())
 
-	nodes.ChecksumForward(pkt, r.header.Proto, r.laddr)
+	nodes.ChecksumForward(pkt, r.link.header.Proto, r.laddr)
 	if debug.Debug() {
 		// todo
 	}
@@ -118,11 +111,11 @@ func (r *Raw) Send(pkt *packet.Packet) error {
 	_, err := r.raw.Write(pkt.Bytes())
 	return errors.WithStack(err)
 }
-func (r *Raw) Header() proto.Header    { return r.header }
+func (r *Raw) Link() link              { return r.link }
 func (r *Raw) Proxyer() netip.AddrPort { return r.proxyer }
 func (r *Raw) LocalAddr() net.Addr     { return r.l.Addr() }
 func (r *Raw) RemoteAddrPort() netip.AddrPort {
-	return netip.AddrPortFrom(r.header.Server, r.serverPort)
+	return netip.AddrPortFrom(r.link.header.Server, r.link.serverPort)
 }
 func (r *Raw) Close() error { return r.close(nil) }
 

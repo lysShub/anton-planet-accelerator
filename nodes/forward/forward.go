@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"syscall"
 
 	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Config struct {
@@ -24,13 +26,19 @@ type Forward struct {
 	conn *net.UDPConn
 
 	linkMu sync.RWMutex
-	links  map[proto.Header]*Raw
+	links  map[link]*Raw
 
 	closeErr errorx.CloseErr
 }
 
+type link struct {
+	header      proto.Header
+	processPort uint16
+	serverPort  uint16
+}
+
 func New(addr string, config *Config) (*Forward, error) {
-	var f = &Forward{config: config, links: map[proto.Header]*Raw{}}
+	var f = &Forward{config: config, links: map[link]*Raw{}}
 
 	laddr, err := net.ResolveUDPAddr("udp4", addr)
 	if err != nil {
@@ -85,11 +93,21 @@ func (f *Forward) recvService() (err error) {
 			fmt.Println("其他操作")
 		}
 
+		var t header.Transport
+		switch hdr.Proto {
+		case syscall.IPPROTO_TCP:
+			t = header.TCP(pkt.Bytes())
+		case syscall.IPPROTO_UDP:
+			t = header.TCP(pkt.Bytes())
+		default:
+		}
+
+		link := link{header: hdr, processPort: t.SourcePort(), serverPort: t.DestinationPort()}
 		f.linkMu.RLock()
-		raw, has := f.links[hdr]
+		raw, has := f.links[link]
 		f.linkMu.RUnlock()
 		if !has {
-			raw, err = NewRaw(hdr, paddr, pkt)
+			raw, err = NewRaw(link, paddr)
 			if err != nil {
 				return f.close(err)
 			}
@@ -97,7 +115,7 @@ func (f *Forward) recvService() (err error) {
 			fmt.Println("new conn", hdr.ID, hdr.Server)
 
 			f.linkMu.Lock()
-			f.links[hdr] = raw
+			f.links[link] = raw
 			f.linkMu.Unlock()
 			go f.sendService(raw)
 		}
@@ -129,7 +147,7 @@ func (f *Forward) deleteRaw(raw *Raw) error {
 	fmt.Println("delect raw", raw.LocalAddr(), raw.RemoteAddrPort())
 
 	f.linkMu.Lock()
-	delete(f.links, raw.Header())
+	delete(f.links, raw.Link())
 	f.linkMu.Unlock()
 	return raw.Close()
 }

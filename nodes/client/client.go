@@ -228,13 +228,11 @@ func (c *Client) captureService() (_ error) {
 			ip.SetHead(head)
 		}
 
+		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
+		fmt.Printf("send %#v \n", ip.Bytes())
 		hdr.Proto = uint8(s.Proto)
 		hdr.Server = s.Dst.Addr()
 		hdr.Encode(ip)
-		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
-
-		fmt.Println("send %#v", ip.Bytes())
-
 		if _, err = c.conn.Write(ip.Bytes()); err != nil {
 			return c.close(err)
 		}
@@ -284,7 +282,9 @@ func (c *Client) injectServic() (_ error) {
 			continue
 		}
 
-		ip := header.IPv4(pkt.AppendN(header.IPv4MinimumSize).Bytes())
+		fmt.Printf("recv %#v", pkt.Bytes())
+
+		ip := header.IPv4(pkt.AttachN(header.IPv4MinimumSize).Bytes())
 		ip.Encode(&header.IPv4Fields{
 			TotalLength: uint16(pkt.Data()),
 			TTL:         64,
