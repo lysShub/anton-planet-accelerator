@@ -1,4 +1,4 @@
-package proxyer_test
+package client_test
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jftuga/geodist"
-	"github.com/lysShub/anton-planet-accelerator/nodes/proxyer"
+	"github.com/lysShub/anton-planet-accelerator/nodes/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,7 +23,7 @@ func TestXxx(t *testing.T) {
 }
 
 func Test_IP2Localtion(t *testing.T) {
-	loc, err := proxyer.IP2Localtion(netip.MustParseAddr("114.114.114.114"))
+	loc, err := client.IP2Localtion(netip.MustParseAddr("114.114.114.114"))
 	require.NoError(t, err)
 
 	require.InDelta(t, 117, loc.Lon, 15)

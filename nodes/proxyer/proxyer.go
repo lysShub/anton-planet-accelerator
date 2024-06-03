@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/jftuga/geodist"
 	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -18,7 +17,8 @@ import (
 )
 
 type Proxyer struct {
-	config *Config
+	config  *Config
+	forward netip.AddrPort
 
 	conn *net.UDPConn
 
@@ -27,13 +27,15 @@ type Proxyer struct {
 	clientMu sync.RWMutex
 	clients  map[proto.ID]netip.AddrPort // id:client
 
-	route *Route
-
 	closeErr errorx.CloseErr
 }
 
-func New(addr string, config *Config) (*Proxyer, error) {
-	var p = &Proxyer{config: config, clients: map[proto.ID]netip.AddrPort{}}
+func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) {
+	var p = &Proxyer{
+		config:  config,
+		forward: forward,
+		clients: map[proto.ID]netip.AddrPort{},
+	}
 
 	laddr, err := net.ResolveUDPAddr("udp4", addr)
 	if err != nil {
@@ -49,7 +51,6 @@ func New(addr string, config *Config) (*Proxyer, error) {
 		return nil, p.close(err)
 	}
 
-	p.route = NewRoute()
 	return p, nil
 }
 
@@ -71,9 +72,7 @@ func (p *Proxyer) Serve() error {
 	go p.donwlinkService()
 	return p.close(p.uplinkService())
 }
-func (p *Proxyer) AddForward(addr netip.AddrPort, loc geodist.Coord) {
-	p.route.AddForward(addr, loc)
-}
+
 func (p *Proxyer) AddClient(id proto.ID /* key [16]byte */) {
 	p.clientMu.Lock()
 	defer p.clientMu.Unlock()
@@ -82,9 +81,8 @@ func (p *Proxyer) AddClient(id proto.ID /* key [16]byte */) {
 
 func (p *Proxyer) uplinkService() (_ error) {
 	var (
-		pkt     = packet.Make(p.config.MaxRecvBuff)
-		hdr     = &proto.Header{}
-		newlink = false
+		pkt = packet.Make(p.config.MaxRecvBuff)
+		hdr = &proto.Header{}
 	)
 
 	for {
@@ -106,17 +104,12 @@ func (p *Proxyer) uplinkService() (_ error) {
 		if !has {
 			fmt.Println("无效的id", hdr)
 			continue
-		}
-
-		if !cli.IsValid() {
+		} else if !cli.IsValid() {
 			fmt.Println("new client", caddr.String())
 
-			newlink = true
 			p.clientMu.Lock()
 			p.clients[hdr.ID] = caddr
 			p.clientMu.Unlock()
-		} else {
-			newlink = false
 		}
 
 		switch hdr.Kind {
@@ -140,15 +133,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				continue
 			}
 
-			next, dist, err := p.route.Next(hdr.Server)
-			if err != nil {
-				fmt.Println("route", err)
-				continue
-			} else if newlink && dist > 5e4 {
-				fmt.Println("低质路由", hdr.Server, next, dist)
-			}
-
-			_, err = p.sender.WriteToUDPAddrPort(pkt.Bytes(), next)
+			_, err = p.sender.WriteToUDPAddrPort(pkt.Bytes(), p.forward)
 			if err != nil {
 				return p.close(err)
 			}

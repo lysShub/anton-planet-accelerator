@@ -1,4 +1,4 @@
-package proxyer
+package client
 
 import (
 	"encoding/json"
@@ -13,74 +13,76 @@ import (
 )
 
 type Route struct {
-	nextMu sync.RWMutex
-	nexts  map[geodist.Coord]netip.AddrPort // localtion:addr
+	proxyerMu sync.RWMutex
+	proxyers  map[netip.AddrPort]geodist.Coord // proxyer-address:proxy-localtion
 
 	// todo: ttl
 	cacheMu sync.RWMutex
-	cache   map[netip.Addr]cachekey // dstination-address:forward-address
-}
-
-type cachekey struct {
-	addr netip.AddrPort
-	dist float64
+	cache   map[netip.Addr]netip.AddrPort // server-address:proxyer-address
 }
 
 func NewRoute() *Route {
 	return &Route{
-		nexts: map[geodist.Coord]netip.AddrPort{},
+		proxyers: map[netip.AddrPort]geodist.Coord{},
 
-		cache: map[netip.Addr]cachekey{},
+		cache: map[netip.Addr]netip.AddrPort{},
 	}
 }
 
-func (r *Route) Next(dst netip.Addr) (next netip.AddrPort, dist float64, err error) {
+func (r *Route) Next(dst netip.Addr) (proxyer netip.AddrPort, err error) {
 	r.cacheMu.RLock()
 	v, has := r.cache[dst]
 	r.cacheMu.RUnlock()
 	if !has {
-		next, dist, err = r.queryForward(dst)
+		proxyer, err = r.queryProxyer(dst)
 		if err != nil {
-			return netip.AddrPort{}, 0, err
+			return netip.AddrPort{}, err
 		}
 
 		r.cacheMu.Lock()
 		defer r.cacheMu.Unlock()
-		r.cache[dst] = cachekey{next, dist}
-		return next, dist, nil
+		r.cache[dst] = proxyer
+		return proxyer, nil
 	} else {
-		return v.addr, v.dist, nil
+		return v, nil
 	}
 }
 
-func (r *Route) AddForward(addr netip.AddrPort, location geodist.Coord) {
-	r.nextMu.Lock()
-	defer r.nextMu.Unlock()
+func (r *Route) AddProxyer(proxyer netip.AddrPort, proxyLocation geodist.Coord) {
+	r.proxyerMu.Lock()
+	defer r.proxyerMu.Unlock()
 
-	r.nexts[location] = addr
+	r.proxyers[proxyer] = proxyLocation
 }
 
-func (r *Route) queryForward(ip netip.Addr) (next netip.AddrPort, dist float64, err error) {
-	loc, err := IP2Localtion(ip)
+func (r *Route) queryProxyer(server netip.Addr) (proxyer netip.AddrPort, err error) {
+	r.proxyerMu.RLock()
+	n := len(r.proxyers)
+	r.proxyerMu.RUnlock()
+	if n == 0 {
+		return netip.AddrPort{}, errors.New("not proxyer server")
+	}
+
+	loc, err := IP2Localtion(server)
 	if err != nil {
-		return netip.AddrPort{}, 0, err
+		return netip.AddrPort{}, err
 	}
 
-	r.nextMu.RLock()
-	defer r.nextMu.RUnlock()
+	r.proxyerMu.RLock()
+	defer r.proxyerMu.RUnlock()
 
-	dist = math.MaxFloat64
-	for k, e := range r.nexts {
-		_, d, err := geodist.VincentyDistance(loc, k)
-		if err == nil && d < dist {
-			next, dist = e, d
+	offset := math.MaxFloat64
+	for paddr, ploc := range r.proxyers {
+		_, d, err := geodist.VincentyDistance(loc, ploc)
+		if err == nil && d < offset {
+			proxyer, offset = paddr, d
 		}
 	}
-	if !next.IsValid() {
-		return netip.AddrPort{}, 0, errors.Errorf("can't get address %s nearby forward", ip.String())
+	if !proxyer.IsValid() {
+		return netip.AddrPort{}, errors.Errorf("can't get address %s nearby forward", server.String())
 	}
 
-	return next, dist, nil
+	return proxyer, nil
 }
 
 func IP2Localtion(ip netip.Addr) (geodist.Coord, error) {

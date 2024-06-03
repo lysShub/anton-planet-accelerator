@@ -63,3 +63,27 @@ func ChecksumForward(pkt *packet.Packet, proto uint8, loc netip.AddrPort) {
 	t.SetChecksum(^checksum.Combine(sum, ^t.Checksum()))
 	t.SetSourcePort(loc.Port())
 }
+
+func Rechecksum(ip header.IPv4) {
+	ip.SetChecksum(0)
+	ip.SetChecksum(^ip.CalculateChecksum())
+
+	psum := header.PseudoHeaderChecksum(
+		ip.TransportProtocol(),
+		ip.SourceAddress(),
+		ip.DestinationAddress(),
+		ip.PayloadLength(),
+	)
+	switch proto := ip.TransportProtocol(); proto {
+	case header.TCPProtocolNumber:
+		tcp := header.TCP(ip.Payload())
+		tcp.SetChecksum(0)
+		tcp.SetChecksum(^checksum.Checksum(tcp, psum))
+	case header.UDPProtocolNumber:
+		udp := header.UDP(ip.Payload())
+		udp.SetChecksum(0)
+		udp.SetChecksum(^checksum.Checksum(udp, psum))
+	default:
+		panic(fmt.Sprintf("not support protocol %d", proto))
+	}
+}

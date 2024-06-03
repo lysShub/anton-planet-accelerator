@@ -7,9 +7,10 @@
 
 
 ```text
-              capure              uplink                      send
-    process <--------> client <============> proxyer <============> forwarder <============> server
-              inject             downlink                     recv
+
+    process <﹒﹒﹒﹒> client <============> proxyer <----------------------------------> forwarder <============> server
+                                                       不存在路由，地理上是1:1, 1:N的
+                                                       服务器只是为了负载均衡                             
 ```
 
 

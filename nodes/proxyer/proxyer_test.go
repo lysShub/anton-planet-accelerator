@@ -8,17 +8,12 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/jftuga/geodist"
 	"github.com/lysShub/anton-planet-accelerator/nodes/proxyer"
 	"github.com/lysShub/netkit/debug"
 	"github.com/stretchr/testify/require"
 )
 
 // go test -race -v -tags "debug" -run TestXxxx
-
-var (
-	Moscow = geodist.Coord{Lon: 37.56, Lat: 55.75}
-)
 
 func TestXxxx(t *testing.T) {
 	fmt.Println(debug.Debug())
@@ -27,10 +22,11 @@ func TestXxxx(t *testing.T) {
 		MaxRecvBuff: 1536,
 	}
 
-	p, err := proxyer.New(":19986", &config)
+	forward := netip.MustParseAddrPort("45.150.236.6:19986")
+
+	p, err := proxyer.New(":19986", forward, &config)
 	require.NoError(t, err)
 
-	p.AddForward(netip.MustParseAddrPort("45.150.236.6:19986"), Moscow)
 	p.AddClient(1)
 
 	err = p.Serve()

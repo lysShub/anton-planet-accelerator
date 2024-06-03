@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jftuga/geodist"
 	accelerator "github.com/lysShub/anton-planet-accelerator"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	proto "github.com/lysShub/anton-planet-accelerator/proto"
@@ -25,7 +26,6 @@ import (
 	"github.com/lysShub/netkit/pcap"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	stdsum "gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -45,6 +45,8 @@ type Client struct {
 
 	pcap *pcap.Pcap
 
+	route *Route
+
 	closeErr errorx.CloseErr
 }
 
@@ -53,18 +55,14 @@ type msg struct {
 	data   []byte
 }
 
-func New(proxyer string, id proto.ID, config *Config) (*Client, error) {
+func New(id proto.ID, config *Config) (*Client, error) {
 	var c = &Client{
 		config: config, id: id,
 		msgRecver: make(chan msg, 8),
 	}
 	var err error
 
-	raddr, err := net.ResolveUDPAddr("udp4", proxyer)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	c.conn, err = net.DialUDP("udp4", nil, raddr)
+	c.conn, err = net.ListenUDP("udp4", nil)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -92,6 +90,7 @@ func New(proxyer string, id proto.ID, config *Config) (*Client, error) {
 		}
 	}
 
+	c.route = NewRoute()
 	return c, nil
 }
 
@@ -115,6 +114,11 @@ func (c *Client) close(cause error) error {
 func (c *Client) Start() {
 	go c.captureService()
 	go c.injectServic()
+}
+
+// AddProxyer add a proxyer
+func (c *Client) AddProxyer(proxyer netip.AddrPort, proxyLocation geodist.Coord) {
+	c.route.AddProxyer(proxyer, proxyLocation)
 }
 
 type NetworkStats struct {
@@ -228,12 +232,18 @@ func (c *Client) captureService() (_ error) {
 			ip.SetHead(head)
 		}
 
+		next, err := c.route.Next(hdr.Server)
+		if err != nil {
+			fmt.Println("route", err)
+			continue
+		}
+
 		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
 		fmt.Printf("send %#v \n", ip.Bytes())
 		hdr.Proto = uint8(s.Proto)
 		hdr.Server = s.Dst.Addr()
 		hdr.Encode(ip)
-		if _, err = c.conn.Write(ip.Bytes()); err != nil {
+		if _, err = c.conn.WriteToUDPAddrPort(ip.Bytes(), next); err != nil {
 			return c.close(err)
 		}
 
@@ -243,7 +253,7 @@ func (c *Client) captureService() (_ error) {
 				if err := hdr.Encode(ip.Sets(proto.HeaderSize, 0xffff)); err != nil {
 					return c.close(err)
 				}
-				if _, err = c.conn.Write(ip.Bytes()); err != nil {
+				if _, err = c.conn.WriteToUDPAddrPort(ip.Bytes(), next); err != nil {
 					return c.close(err)
 				}
 			}
@@ -292,7 +302,7 @@ func (c *Client) injectServic() (_ error) {
 			SrcAddr:     tcpip.AddrFrom4(hdr.Server.As4()),
 			DstAddr:     tcpip.AddrFrom4(laddr.As4()),
 		})
-		rechecksum(ip)
+		nodes.Rechecksum(ip)
 
 		if c.pcap != nil {
 			c.pcap.WriteIP(ip)
@@ -302,30 +312,6 @@ func (c *Client) injectServic() (_ error) {
 		if err != nil {
 			return c.close(err)
 		}
-	}
-}
-
-func rechecksum(ip header.IPv4) {
-	ip.SetChecksum(0)
-	ip.SetChecksum(^ip.CalculateChecksum())
-
-	psum := header.PseudoHeaderChecksum(
-		ip.TransportProtocol(),
-		ip.SourceAddress(),
-		ip.DestinationAddress(),
-		ip.PayloadLength(),
-	)
-	switch proto := ip.TransportProtocol(); proto {
-	case header.TCPProtocolNumber:
-		tcp := header.TCP(ip.Payload())
-		tcp.SetChecksum(0)
-		tcp.SetChecksum(^stdsum.Checksum(tcp, psum))
-	case header.UDPProtocolNumber:
-		udp := header.UDP(ip.Payload())
-		udp.SetChecksum(0)
-		udp.SetChecksum(^stdsum.Checksum(udp, psum))
-	default:
-		panic(fmt.Sprintf("not support protocol %d", proto))
 	}
 }
 
