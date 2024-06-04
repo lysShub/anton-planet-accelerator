@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/lysShub/anton-planet-accelerator/proto"
+	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
@@ -74,6 +75,7 @@ func (p *Proxyer) close(cause error) error {
 }
 
 func (p *Proxyer) Serve() error {
+	p.config.logger.Info("start", slog.String("listen", p.conn.LocalAddr().String()), slog.Bool("debug", debug.Debug()))
 	go p.donwlinkService()
 	return p.close(p.uplinkService())
 }
