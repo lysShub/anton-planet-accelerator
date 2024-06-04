@@ -128,11 +128,6 @@ func (p *Proxyer) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		default:
-			if hdr.Server.IsPrivate() || hdr.Server.IsLoopback() || hdr.Server.IsUnspecified() || hdr.Server.IsMulticast() {
-				// ignore special address
-				continue
-			}
-
 			_, err = p.sender.WriteToUDPAddrPort(pkt.Bytes(), p.forward)
 			if err != nil {
 				return p.close(err)

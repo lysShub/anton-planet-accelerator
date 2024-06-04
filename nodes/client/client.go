@@ -10,7 +10,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -24,6 +23,7 @@ import (
 	mapping "github.com/lysShub/netkit/mapping/process"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/netkit/pcap"
+	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -32,6 +32,7 @@ import (
 type Client struct {
 	config *Config
 	id     proto.ID
+	laddr  netip.AddrPort
 
 	conn *net.UDPConn
 
@@ -40,8 +41,7 @@ type Client struct {
 	capture *divert.Handle
 	inbound divert.Address
 
-	msgRecver          chan msg
-	forwardStatsEnable atomic.Bool
+	msgRecver chan msg
 
 	pcap *pcap.Pcap
 
@@ -66,6 +66,7 @@ func New(id proto.ID, config *Config) (*Client, error) {
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	c.laddr = netip.AddrPortFrom(test.LocIP(), uint16(c.conn.LocalAddr().(*net.UDPAddr).Port))
 
 	if c.mapping, err = mapping.New(); err != nil {
 		return nil, c.close(err)
@@ -129,7 +130,11 @@ type NetworkStats struct {
 }
 
 func (c *Client) NetworkStats(timeout time.Duration) (NetworkStats, error) {
-	for _, kind := range []proto.Kind{proto.PingProxyer, proto.PacketLossProxyer} {
+	next, err := c.route.CurrentNext()
+	if err != nil {
+		return NetworkStats{}, err
+	}
+	for _, kind := range []proto.Kind{proto.PingProxyer, proto.PacketLossProxyer, proto.PacketLossProxyer, proto.PacketLossForward} {
 		var pkt = packet.Make(proto.HeaderSize)
 		var hdr = proto.Header{
 			Server: netip.IPv4Unspecified(),
@@ -140,7 +145,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (NetworkStats, error) {
 		if err := hdr.Encode(pkt); err != nil {
 			return NetworkStats{}, c.close(err)
 		}
-		if _, err := c.conn.Write(pkt.Bytes()); err != nil {
+		if _, err := c.conn.WriteToUDPAddrPort(pkt.Bytes(), next); err != nil {
 			return NetworkStats{}, c.close(err)
 		}
 	}
@@ -232,7 +237,7 @@ func (c *Client) captureService() (_ error) {
 			ip.SetHead(head)
 		}
 
-		next, err := c.route.Next(hdr.Server)
+		next, err := c.route.Next(s.Dst.Addr())
 		if err != nil {
 			fmt.Println("route", err)
 			continue
@@ -246,24 +251,12 @@ func (c *Client) captureService() (_ error) {
 		if _, err = c.conn.WriteToUDPAddrPort(ip.Bytes(), next); err != nil {
 			return c.close(err)
 		}
-
-		if c.forwardStatsEnable.Swap(false) {
-			for _, kind := range []proto.Kind{proto.PingForward, proto.PacketLossForward} {
-				hdr.Kind = kind
-				if err := hdr.Encode(ip.Sets(proto.HeaderSize, 0xffff)); err != nil {
-					return c.close(err)
-				}
-				if _, err = c.conn.WriteToUDPAddrPort(ip.Bytes(), next); err != nil {
-					return c.close(err)
-				}
-			}
-		}
 	}
 }
 
 func (c *Client) injectServic() (_ error) {
 	var (
-		laddr = netip.MustParseAddrPort(c.conn.LocalAddr().String()).Addr()
+		laddr = tcpip.AddrFrom4(c.laddr.Addr().As4())
 		pkt   = packet.Make(0, c.config.MaxRecvBuff)
 		hdr   = &proto.Header{}
 	)
@@ -300,7 +293,7 @@ func (c *Client) injectServic() (_ error) {
 			TTL:         64,
 			Protocol:    hdr.Proto,
 			SrcAddr:     tcpip.AddrFrom4(hdr.Server.As4()),
-			DstAddr:     tcpip.AddrFrom4(laddr.As4()),
+			DstAddr:     laddr,
 		})
 		nodes.Rechecksum(ip)
 

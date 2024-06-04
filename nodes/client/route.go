@@ -17,8 +17,9 @@ type Route struct {
 	proxyers  map[netip.AddrPort]geodist.Coord // proxyer-address:proxy-localtion
 
 	// todo: ttl
-	cacheMu sync.RWMutex
-	cache   map[netip.Addr]netip.AddrPort // server-address:proxyer-address
+	cacheMu        sync.RWMutex
+	cache          map[netip.Addr]netip.AddrPort // server-address:proxyer-address
+	currentProxyer netip.AddrPort
 }
 
 func NewRoute() *Route {
@@ -29,30 +30,61 @@ func NewRoute() *Route {
 	}
 }
 
-func (r *Route) Next(dst netip.Addr) (proxyer netip.AddrPort, err error) {
+func (r *Route) Next(server netip.Addr) (proxyer netip.AddrPort, err error) {
+	if !server.IsValid() {
+		return netip.AddrPort{}, errors.Errorf("invalid server address %s", server)
+	}
+
+	var has bool
 	r.cacheMu.RLock()
-	v, has := r.cache[dst]
+	proxyer, has = r.cache[server]
 	r.cacheMu.RUnlock()
 	if !has {
-		proxyer, err = r.queryProxyer(dst)
+		proxyer, err = r.queryProxyer(server)
 		if err != nil {
 			return netip.AddrPort{}, err
 		}
 
 		r.cacheMu.Lock()
 		defer r.cacheMu.Unlock()
-		r.cache[dst] = proxyer
+		r.cache[server] = proxyer
+		r.currentProxyer = proxyer
+
 		return proxyer, nil
 	} else {
-		return v, nil
+		r.cacheMu.Lock()
+		defer r.cacheMu.Unlock()
+		r.currentProxyer = proxyer
+
+		return proxyer, nil
 	}
 }
 
-func (r *Route) AddProxyer(proxyer netip.AddrPort, proxyLocation geodist.Coord) {
-	r.proxyerMu.Lock()
-	defer r.proxyerMu.Unlock()
+func (r *Route) CurrentNext() (proxyer netip.AddrPort, err error) {
+	r.cacheMu.RLock()
+	proxyer = r.currentProxyer
+	r.cacheMu.RUnlock()
 
+	if !proxyer.IsValid() {
+		return netip.AddrPort{}, errors.New("not proxyer server")
+	}
+	return proxyer, nil
+}
+
+func (r *Route) AddProxyer(proxyer netip.AddrPort, proxyLocation geodist.Coord) {
+	if !proxyer.IsValid() {
+		panic(proxyer.String())
+	}
+
+	r.proxyerMu.Lock()
 	r.proxyers[proxyer] = proxyLocation
+	r.proxyerMu.Unlock()
+
+	r.cacheMu.Lock()
+	defer r.cacheMu.Unlock()
+	if !r.currentProxyer.IsValid() {
+		r.currentProxyer = proxyer
+	}
 }
 
 func (r *Route) queryProxyer(server netip.Addr) (proxyer netip.AddrPort, err error) {
@@ -85,9 +117,14 @@ func (r *Route) queryProxyer(server netip.Addr) (proxyer netip.AddrPort, err err
 	return proxyer, nil
 }
 
+// todo: 继承到control中
 func IP2Localtion(ip netip.Addr) (geodist.Coord, error) {
+	var Moscow = geodist.Coord{Lon: 37.56, Lat: 55.75}
+	fmt.Println("todo: 莫斯科")
+	return Moscow, nil
+
 	if !ip.Is4() {
-		return geodist.Coord{}, errors.New("only support ipv4")
+		return geodist.Coord{}, errors.Errorf("only support ipv4 %s", ip.String())
 	}
 
 	url := fmt.Sprintf(`http://ip-api.com/json/%s?fields=status,country,lat,lon,query`, ip.String())
