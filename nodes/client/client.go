@@ -140,7 +140,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, kind := range []proto.Kind{proto.PingProxyer, proto.PacketLossProxyer, proto.PacketLossProxyer, proto.PacketLossForward} {
+	for _, kind := range []proto.Kind{proto.PingProxyer, proto.PacketLossProxyer, proto.PingForward, proto.PacketLossForward} {
 		var pkt = packet.Make(proto.HeaderSize)
 		var hdr = proto.Header{
 			Server: netip.IPv4Unspecified(),

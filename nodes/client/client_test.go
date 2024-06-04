@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
-	"strconv"
 	"testing"
 	"time"
 
@@ -29,7 +28,7 @@ var (
 func TestXxxx(t *testing.T) {
 	divert.MustLoad(divert.DLL)
 
-	accelerator.Warthunder = "curl.exe"
+	// accelerator.Warthunder = "curl.exe"
 
 	fmt.Println(debug.Debug(), accelerator.Warthunder)
 
@@ -52,21 +51,8 @@ func TestXxxx(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		fmt.Printf("%#v\n\n", stats)
+		fmt.Printf("Ping: %s + %s \n", stats.PingProxyer.String(), stats.PingForward.String())
 
 		time.Sleep(time.Second * 4)
 	}
-}
-
-func TestVvvv(t *testing.T) {
-
-	pl := time.Since(time.Unix(0, 0)).Seconds()
-
-	str := strconv.FormatFloat(pl, 'f', 3, 64)
-
-	fmt.Println(str)
-
-	v, err := strconv.ParseFloat(str, 64)
-	require.NoError(t, err)
-	fmt.Println(v)
 }

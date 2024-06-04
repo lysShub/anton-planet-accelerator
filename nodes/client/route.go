@@ -120,7 +120,7 @@ func (r *Route) queryProxyer(server netip.Addr) (proxyer netip.AddrPort, err err
 // todo: 继承到control中
 func IP2Localtion(ip netip.Addr) (geodist.Coord, error) {
 	var Moscow = geodist.Coord{Lon: 37.56, Lat: 55.75}
-	fmt.Println("todo: 莫斯科")
+	// fmt.Println("todo: 莫斯科")
 	return Moscow, nil
 
 	if !ip.Is4() {

@@ -8,17 +8,16 @@ import (
 	"net"
 	"net/netip"
 	"syscall"
-	"unsafe"
 
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
+	rawbpf "github.com/lysShub/rawsock/helper/bpf"
 	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/bpf"
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -157,32 +156,14 @@ func bpfFilterPort(raw raw, srcPort, dstPort uint16) error {
 
 		bpf.RetConstant{Val: 0xffff},
 	}
+
 	return setBpf(raw, ins)
 }
 
 func setBpf(raw raw, ins []bpf.Instruction) error {
-	var prog *unix.SockFprog
-	if rawIns, err := bpf.Assemble(ins); err != nil {
-		return errors.WithStack(err)
-	} else {
-		prog = &unix.SockFprog{
-			Len:    uint16(len(rawIns)),
-			Filter: (*unix.SockFilter)(unsafe.Pointer(&rawIns[0])),
-		}
-	}
-
 	rawconn, err := raw.SyscallConn()
 	if err != nil {
-		return errors.WithStack(err)
+		return err
 	}
-
-	var e error
-	if err := rawconn.Control(func(fd uintptr) {
-		e = unix.SetsockoptSockFprog(int(fd), unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, prog)
-	}); err != nil {
-		return errors.WithStack(err)
-	} else if e != nil {
-		return errors.WithStack(e)
-	}
-	return nil
+	return rawbpf.SetRawBPF(rawconn, ins)
 }
