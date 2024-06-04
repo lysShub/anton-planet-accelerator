@@ -100,16 +100,15 @@ func (f *Forward) recvService() (err error) {
 
 		switch hdr.Kind {
 		case proto.PingForward:
-			pkt.SetHead(head)
-			_, err := f.conn.WriteToUDPAddrPort(pkt.Bytes(), paddr)
+
+			_, err := f.conn.WriteToUDPAddrPort(pkt.SetHead(head).Bytes(), paddr)
 			if err != nil {
 				return f.close(err)
 			}
 		case proto.PacketLossForward:
 			var pl proto.PL = 0.11 // todo:
 
-			pkt.SetHead(head)
-			pkt.Append(pl.Encode()...)
+			pkt.SetHead(head).Append(pl.Encode()...)
 			_, err = f.conn.WriteToUDPAddrPort(pkt.Bytes(), paddr)
 			if err != nil {
 				return f.close(err)
