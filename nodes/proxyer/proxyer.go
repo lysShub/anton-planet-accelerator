@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
-	"strconv"
 	"sync"
 
 	"github.com/lysShub/anton-planet-accelerator/proto"
@@ -33,7 +32,7 @@ type Proxyer struct {
 
 func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) {
 	var p = &Proxyer{
-		config:  config,
+		config:  config.init(),
 		forward: forward,
 		clients: map[proto.ID]netip.AddrPort{},
 	}
@@ -125,10 +124,9 @@ func (p *Proxyer) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		case proto.PacketLossProxyer:
-			var pl float64 = 1.11 // todo:
+			var pl proto.PL = 0.11 // todo:
 
-			strPl := strconv.FormatFloat(pl, 'f', 3, 64)
-			pkt.Append([]byte(strPl)...)
+			pkt.Append(pl.Encode()...)
 			_, err = p.conn.WriteToUDPAddrPort(pkt.Bytes(), caddr)
 			if err != nil {
 				return p.close(err)

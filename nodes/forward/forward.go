@@ -81,12 +81,13 @@ func (f *Forward) Serve() error {
 
 func (f *Forward) recvService() (err error) {
 	var (
-		pkt = packet.Make(f.config.MaxRecvBuffSize)
-		hdr = proto.Header{}
+		pkt  = packet.Make(f.config.MaxRecvBuffSize)
+		hdr  = proto.Header{}
+		head = 64
 	)
 
 	for {
-		n, paddr, err := f.conn.ReadFromUDPAddrPort(pkt.Sets(64, 0xffff).Bytes())
+		n, paddr, err := f.conn.ReadFromUDPAddrPort(pkt.Sets(head, 0xffff).Bytes())
 		if err != nil {
 			return f.close(err)
 		}
@@ -99,7 +100,7 @@ func (f *Forward) recvService() (err error) {
 
 		switch hdr.Kind {
 		case proto.PingForward:
-			hdr.Encode(pkt.Sets(64, 0xffff))
+			pkt.SetHead(head)
 			_, err := f.conn.WriteToUDPAddrPort(pkt.Bytes(), paddr)
 			if err != nil {
 				return f.close(err)
@@ -107,7 +108,7 @@ func (f *Forward) recvService() (err error) {
 		case proto.PacketLossForward:
 			var pl proto.PL = 0.11 // todo:
 
-			hdr.Encode(pkt.Sets(64, 0xffff))
+			pkt.SetHead(head)
 			pkt.Append(pl.Encode()...)
 			_, err = f.conn.WriteToUDPAddrPort(pkt.Bytes(), paddr)
 			if err != nil {
