@@ -4,7 +4,6 @@
 package forward
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -23,7 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type Raw struct {
+type Link struct {
 	raw *net.IPConn
 	l   listener
 
@@ -34,9 +33,9 @@ type Raw struct {
 	closeErr errorx.CloseErr
 }
 
-func NewRaw(link link, proxyer netip.AddrPort) (*Raw, error) {
+func NewLink(link link, proxyer netip.AddrPort) (*Link, error) {
 	var (
-		r = &Raw{
+		r = &Link{
 			link:    link,
 			proxyer: proxyer,
 		}
@@ -71,7 +70,7 @@ func NewRaw(link link, proxyer netip.AddrPort) (*Raw, error) {
 	return r, nil
 }
 
-func (t *Raw) close(cause error) error {
+func (t *Link) close(cause error) error {
 	cause = errors.WithStack(cause)
 	return t.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
@@ -84,7 +83,7 @@ func (t *Raw) close(cause error) error {
 		return errs
 	})
 }
-func (r *Raw) Recv(pkt *packet.Packet) error {
+func (r *Link) Recv(pkt *packet.Packet) error {
 	n, _, err := r.raw.ReadFrom(pkt.Bytes())
 	if err != nil {
 		return r.close(err)
@@ -100,9 +99,7 @@ func (r *Raw) Recv(pkt *packet.Packet) error {
 	r.link.header.Encode(pkt)
 	return nil
 }
-func (r *Raw) Send(pkt *packet.Packet) error {
-	fmt.Printf("recv %#v\n\n", pkt.Bytes())
-
+func (r *Link) Send(pkt *packet.Packet) error {
 	nodes.ChecksumForward(pkt, r.link.header.Proto, r.laddr)
 	if debug.Debug() {
 		// todo
@@ -111,13 +108,10 @@ func (r *Raw) Send(pkt *packet.Packet) error {
 	_, err := r.raw.Write(pkt.Bytes())
 	return errors.WithStack(err)
 }
-func (r *Raw) Link() link              { return r.link }
-func (r *Raw) Proxyer() netip.AddrPort { return r.proxyer }
-func (r *Raw) LocalAddr() net.Addr     { return r.l.Addr() }
-func (r *Raw) RemoteAddrPort() netip.AddrPort {
-	return netip.AddrPortFrom(r.link.header.Server, r.link.serverPort)
-}
-func (r *Raw) Close() error { return r.close(nil) }
+func (r *Link) Link() link              { return r.link }
+func (r *Link) Proxyer() netip.AddrPort { return r.proxyer }
+func (r *Link) LocalAddr() net.Addr     { return r.l.Addr() }
+func (r *Link) Close() error            { return r.close(nil) }
 
 type udpLister struct {
 	*net.UDPConn

@@ -4,7 +4,7 @@
 package proxyer
 
 import (
-	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"strconv"
@@ -56,6 +56,11 @@ func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) 
 
 func (p *Proxyer) close(cause error) error {
 	cause = errors.WithStack(cause)
+	if cause != nil {
+		p.config.logger.Error(cause.Error(), errorx.Trace(cause))
+	} else {
+		p.config.logger.Info("close")
+	}
 	return p.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
 		if p.conn != nil {
@@ -93,7 +98,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 		pkt.SetData(n)
 
 		if err := hdr.Decode(pkt); err != nil {
-			fmt.Println("client decode", err)
+			p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
 		pkt.AttachN(proto.HeaderSize)
@@ -102,10 +107,9 @@ func (p *Proxyer) uplinkService() (_ error) {
 		cli, has := p.clients[hdr.ID]
 		p.clientMu.RUnlock()
 		if !has {
-			fmt.Println("无效的id", hdr)
 			continue
 		} else if !cli.IsValid() {
-			fmt.Println("new client", caddr.String())
+			p.config.logger.Info("new client", slog.String("header", hdr.String()), slog.String("client", caddr.String()))
 
 			p.clientMu.Lock()
 			p.clients[hdr.ID] = caddr
@@ -150,7 +154,8 @@ func (p *Proxyer) donwlinkService() (_ error) {
 		pkt.SetData(n)
 
 		if err := hdr.Decode(pkt); err != nil {
-			fmt.Println("forward decode", hdr.ID)
+			p.config.logger.Warn(err.Error(), errorx.Trace(err))
+			continue
 		}
 		pkt.AttachN(proto.HeaderSize)
 
@@ -158,7 +163,8 @@ func (p *Proxyer) donwlinkService() (_ error) {
 		caddr, has := p.clients[hdr.ID]
 		p.clientMu.Unlock()
 		if !has {
-			fmt.Println("forward invalid id", hdr.ID)
+			p.config.logger.Warn("invalid client id", slog.String("header", hdr.String()))
+			continue
 		}
 
 		_, err = p.conn.WriteToUDPAddrPort(pkt.Bytes(), caddr)

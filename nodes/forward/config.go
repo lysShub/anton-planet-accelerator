@@ -1,4 +1,4 @@
-package proxyer
+package forward
 
 import (
 	"log/slog"
@@ -6,12 +6,10 @@ import (
 )
 
 type Config struct {
-	MaxRecvBuff int
+	MaxRecvBuffSize int
 
 	LogPath string
 	logger  *slog.Logger
-
-	PcapBuiltinPath string
 }
 
 func (c *Config) init() *Config {
@@ -27,6 +25,5 @@ func (c *Config) init() *Config {
 		}
 	}
 	c.logger = slog.New(slog.NewJSONHandler(fh, nil))
-
 	return c
 }

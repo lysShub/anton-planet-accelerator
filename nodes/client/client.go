@@ -4,12 +4,11 @@
 package client
 
 import (
-	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"os"
 	"slices"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	proto "github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/fatun"
+	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	mapping "github.com/lysShub/netkit/mapping/process"
 	"github.com/lysShub/netkit/packet"
@@ -57,7 +57,7 @@ type msg struct {
 
 func New(id proto.ID, config *Config) (*Client, error) {
 	var c = &Client{
-		config: config, id: id,
+		config: config.init(), id: id,
 		msgRecver: make(chan msg, 8),
 	}
 	var err error
@@ -97,6 +97,11 @@ func New(id proto.ID, config *Config) (*Client, error) {
 
 func (c *Client) close(cause error) error {
 	cause = errors.WithStack(cause)
+	if cause != nil {
+		c.config.logger.Error(cause.Error(), errorx.Trace(cause))
+	} else {
+		c.config.logger.Info("close")
+	}
 	return c.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
 		if c.conn != nil {
@@ -113,6 +118,7 @@ func (c *Client) close(cause error) error {
 }
 
 func (c *Client) Start() {
+	c.config.logger.Info("start", slog.String("addr", c.laddr.String()), slog.Bool("debug", debug.Debug()))
 	go c.captureService()
 	go c.injectServic()
 }
@@ -125,14 +131,14 @@ func (c *Client) AddProxyer(proxyer netip.AddrPort, proxyLocation geodist.Coord)
 type NetworkStats struct {
 	PingProxyer       time.Duration
 	PingForward       time.Duration
-	PacketLossProxyer float64
-	PacketLossForward float64
+	PacketLossProxyer proto.PL
+	PacketLossForward proto.PL
 }
 
-func (c *Client) NetworkStats(timeout time.Duration) (NetworkStats, error) {
+func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 	next, err := c.route.CurrentNext()
 	if err != nil {
-		return NetworkStats{}, err
+		return nil, err
 	}
 	for _, kind := range []proto.Kind{proto.PingProxyer, proto.PacketLossProxyer, proto.PacketLossProxyer, proto.PacketLossForward} {
 		var pkt = packet.Make(proto.HeaderSize)
@@ -143,10 +149,10 @@ func (c *Client) NetworkStats(timeout time.Duration) (NetworkStats, error) {
 			Kind:   kind,
 		}
 		if err := hdr.Encode(pkt); err != nil {
-			return NetworkStats{}, c.close(err)
+			return nil, c.close(err)
 		}
 		if _, err := c.conn.WriteToUDPAddrPort(pkt.Bytes(), next); err != nil {
-			return NetworkStats{}, c.close(err)
+			return nil, c.close(err)
 		}
 	}
 	start := time.Now()
@@ -157,7 +163,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (NetworkStats, error) {
 		for {
 			select {
 			case <-timer:
-				return stats, errors.WithStack(os.ErrDeadlineExceeded)
+				return &stats, errors.WithStack(os.ErrDeadlineExceeded)
 			case msg := <-c.msgRecver:
 				switch msg.header.Kind {
 				case proto.PingProxyer:
@@ -165,17 +171,15 @@ func (c *Client) NetworkStats(timeout time.Duration) (NetworkStats, error) {
 				case proto.PingForward:
 					stats.PingForward = time.Since(start)
 				case proto.PacketLossProxyer:
-					pl, err := strconv.ParseFloat(string(msg.data), 64)
+					err := stats.PacketLossProxyer.Decode(msg.data)
 					if err != nil {
-						return stats, errors.WithStack(err)
+						return &stats, err
 					}
-					stats.PacketLossProxyer = pl
 				case proto.PacketLossForward:
-					pl, err := strconv.ParseFloat(string(msg.data), 64)
+					err := stats.PacketLossForward.Decode(msg.data)
 					if err != nil {
-						return stats, errors.WithStack(err)
+						return &stats, err
 					}
-					stats.PacketLossProxyer = pl
 				default:
 					c.msgRecver <- msg
 					continue
@@ -184,7 +188,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (NetworkStats, error) {
 			}
 		}
 	}
-	return stats, nil
+	return &stats, nil
 }
 
 func (c *Client) captureService() (_ error) {
@@ -239,12 +243,11 @@ func (c *Client) captureService() (_ error) {
 
 		next, err := c.route.Next(s.Dst.Addr())
 		if err != nil {
-			fmt.Println("route", err)
+			c.config.logger.Error(err.Error(), errorx.Trace(err))
 			continue
 		}
 
 		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
-		fmt.Printf("send %#v \n", ip.Bytes())
 		hdr.Proto = uint8(s.Proto)
 		hdr.Server = s.Dst.Addr()
 		hdr.Encode(ip)
@@ -262,17 +265,17 @@ func (c *Client) injectServic() (_ error) {
 	)
 
 	for {
-		n, err := c.conn.Read(pkt.Sets(64, 0xffff).Bytes())
+		n, paddr, err := c.conn.ReadFromUDPAddrPort(pkt.Sets(64, 0xffff).Bytes())
 		if err != nil {
 			return c.close(err)
 		}
 		pkt.SetData(n)
 
 		if err := hdr.Decode(pkt); err != nil {
-			fmt.Println(err.Error())
+			c.config.logger.Error(err.Error(), errorx.Trace(err))
 			continue
 		} else if hdr.ID != c.id {
-			fmt.Println("未知id")
+			c.config.logger.Warn("recv invalid client id", slog.Int("recv", int(hdr.ID)), slog.Int("expect", int(c.id)), slog.String("proxyer", paddr.String()))
 			continue
 		}
 
@@ -280,12 +283,10 @@ func (c *Client) injectServic() (_ error) {
 			select {
 			case c.msgRecver <- msg{header: *hdr, data: slices.Clone(pkt.Bytes())}:
 			default:
-				fmt.Println("c.msgch 溢出")
+				c.config.logger.Warn("msgRecver filled")
 			}
 			continue
 		}
-
-		fmt.Printf("recv %#v", pkt.Bytes())
 
 		ip := header.IPv4(pkt.AttachN(header.IPv4MinimumSize).Bytes())
 		ip.Encode(&header.IPv4Fields{

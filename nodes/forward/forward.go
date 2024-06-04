@@ -5,20 +5,18 @@ package forward
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
-	"strconv"
+	"net/netip"
 	"sync"
 
 	"github.com/lysShub/anton-planet-accelerator/proto"
+	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
-
-type Config struct {
-	MaxRecvBuffSize int
-}
 
 type Forward struct {
 	config *Config
@@ -26,7 +24,7 @@ type Forward struct {
 	conn *net.UDPConn
 
 	linkMu sync.RWMutex
-	links  map[link]*Raw
+	links  map[link]*Link
 
 	closeErr errorx.CloseErr
 }
@@ -37,8 +35,16 @@ type link struct {
 	serverPort  uint16
 }
 
+func (l link) String() string {
+	return fmt.Sprintf(
+		"{ID:%d, Proto:%d,ProcessPort:%d, Server:%s}",
+		l.header.ID, l.header.Proto, l.processPort,
+		netip.AddrPortFrom(l.header.Server, l.serverPort),
+	)
+}
+
 func New(addr string, config *Config) (*Forward, error) {
-	var f = &Forward{config: config, links: map[link]*Raw{}}
+	var f = &Forward{config: config.init(), links: map[link]*Link{}}
 
 	laddr, err := net.ResolveUDPAddr("udp4", addr)
 	if err != nil {
@@ -69,7 +75,7 @@ func (f *Forward) close(cause error) error {
 }
 
 func (f *Forward) Serve() error {
-	fmt.Println("启动", f.conn.LocalAddr().String())
+	f.config.logger.Info("start", slog.String("listen", f.conn.LocalAddr().String()), slog.Bool("debug", debug.Debug()))
 	return f.recvService()
 }
 
@@ -87,7 +93,7 @@ func (f *Forward) recvService() (err error) {
 		pkt.SetData(n)
 
 		if err := hdr.Decode(pkt); err != nil {
-			fmt.Println("decode", err)
+			f.config.logger.Error(err.Error(), errorx.Trace(err))
 			continue
 		}
 
@@ -99,11 +105,10 @@ func (f *Forward) recvService() (err error) {
 				return f.close(err)
 			}
 		case proto.PacketLossForward:
-			var pl float64 = 1.11 // todo:
-			strPl := strconv.FormatFloat(pl, 'f', 3, 64)
+			var pl proto.PL = 0.11 // todo:
 
 			hdr.Encode(pkt.Sets(64, 0xffff))
-			pkt.Append([]byte(strPl)...)
+			pkt.Append(pl.Encode()...)
 			_, err = f.conn.WriteToUDPAddrPort(pkt.Bytes(), paddr)
 			if err != nil {
 				return f.close(err)
@@ -116,12 +121,11 @@ func (f *Forward) recvService() (err error) {
 			raw, has := f.links[link]
 			f.linkMu.RUnlock()
 			if !has {
-				raw, err = NewRaw(link, paddr)
+				raw, err = NewLink(link, paddr)
 				if err != nil {
 					return f.close(err)
 				}
-
-				fmt.Println("new conn", hdr.ID, hdr.Server)
+				f.config.logger.Info("new link", slog.String("link", link.String()), slog.String("local", raw.LocalAddr().String()))
 
 				f.linkMu.Lock()
 				f.links[link] = raw
@@ -133,12 +137,12 @@ func (f *Forward) recvService() (err error) {
 				f.deleteRaw(raw)
 			}
 		default:
-			fmt.Println("无效的 kind", hdr.Kind)
+			f.config.logger.Warn("invalid header", slog.String("header", hdr.String()), slog.String("proxyer", paddr.String()))
 		}
 	}
 }
 
-func (f *Forward) sendService(raw *Raw) (_ error) {
+func (f *Forward) sendService(raw *Link) (_ error) {
 	var (
 		pkt = packet.Make(f.config.MaxRecvBuffSize)
 	)
@@ -155,8 +159,8 @@ func (f *Forward) sendService(raw *Raw) (_ error) {
 	}
 }
 
-func (f *Forward) deleteRaw(raw *Raw) error {
-	fmt.Println("delect raw", raw.LocalAddr(), raw.RemoteAddrPort())
+func (f *Forward) deleteRaw(raw *Link) error {
+	f.config.logger.Info("delect link", slog.String("link", raw.link.String()))
 
 	f.linkMu.Lock()
 	delete(f.links, raw.Link())

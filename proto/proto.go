@@ -2,7 +2,9 @@ package proto
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net/netip"
+	"strconv"
 	"syscall"
 
 	"github.com/lysShub/netkit/packet"
@@ -21,8 +23,16 @@ func (h *Header) Valid() bool {
 		(h.Proto == syscall.IPPROTO_UDP || h.Proto == syscall.IPPROTO_TCP) &&
 		h.Kind.Valid()
 }
+func (h Header) String() string {
+	return fmt.Sprintf(
+		"{Server:%s, Proto:%d, ID:%d, Kind:%s}",
+		h.Server.String(), h.Proto, h.ID, h.Kind.String(),
+	)
+}
 
 type ID uint16
+
+//go:generate stringer -output proto_gen.go -type=Kind
 type Kind uint8
 
 func (k Kind) Valid() bool {
@@ -68,5 +78,28 @@ func (h *Header) Decode(from *packet.Packet) error {
 	}
 
 	from.DetachN(HeaderSize)
+	return nil
+}
+
+type PL float64
+
+func (p PL) Encode() (to []byte) {
+	if err := p.Valid(); err != nil {
+		panic(err)
+	}
+	return strconv.AppendFloat(nil, float64(p), 'f', 3, 64)
+}
+func (p *PL) Decode(from []byte) (err error) {
+	v, err := strconv.ParseFloat(string(from), 64)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	*p = PL(v)
+	return p.Valid()
+}
+func (p PL) Valid() error {
+	if p < 0 || 1 < p {
+		return errors.New("invalid pack loss")
+	}
 	return nil
 }
