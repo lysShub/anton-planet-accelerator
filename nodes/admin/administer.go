@@ -18,10 +18,10 @@ type Control struct {
 }
 
 // todo: add tls
-func New(addr string) (*Control, error) {
+func New(clientListenAddr string) (*Control, error) {
 	var c = &Control{}
 
-	laddr, err := net.ResolveTCPAddr("tcp4", addr)
+	laddr, err := net.ResolveTCPAddr("tcp4", clientListenAddr)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -67,8 +67,20 @@ func (c *Control) muxHandle(conn *net.TCPConn) (_ error) {
 		return conn.Close()
 	}
 
-	switch initMsg.Kind() {
+	switch kind := initMsg.Kind(); kind {
+	case KindClientNew:
 
+	case KindProxyerNew:
+
+	case KindForwardNew:
+	default:
+		c.logger.Warn("invalid init message kind", slog.String("kind", kind.String()))
 	}
+	return nil
+}
+
+func (c *Control) addClient(client ClientNew) error {
+	c.logger.Info("add client", slog.String("user", client.User))
+
 	return nil
 }

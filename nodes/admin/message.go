@@ -13,6 +13,7 @@ type Message interface {
 	Kind() Kind
 }
 
+//go:generate stringer -output message_gen.go -type=Kind
 type Kind uint8
 
 const (
