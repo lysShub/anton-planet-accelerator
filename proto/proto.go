@@ -18,7 +18,7 @@ type Header struct {
 }
 
 func (h *Header) Valid() bool {
-	return h != nil && h.Server.Is4() &&
+	return h != nil && h.Server.Is4() && h.Client.Is4() &&
 		(h.Proto == syscall.IPPROTO_UDP || h.Proto == syscall.IPPROTO_TCP) &&
 		h.Kind.Valid()
 }

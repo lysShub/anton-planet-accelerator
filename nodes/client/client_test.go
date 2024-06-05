@@ -28,7 +28,7 @@ var (
 func TestXxxx(t *testing.T) {
 	divert.MustLoad(divert.DLL)
 
-	// accelerator.Warthunder = "curl.exe"
+	accelerator.Warthunder = "curl.exe"
 
 	fmt.Println(debug.Debug(), accelerator.Warthunder)
 

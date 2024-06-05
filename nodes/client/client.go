@@ -143,6 +143,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 		var pkt = packet.Make(proto.HeaderSize)
 		var hdr = proto.Header{
 			Server: netip.IPv4Unspecified(),
+			Client: netip.IPv4Unspecified(),
 			Proto:  syscall.IPPROTO_TCP,
 			Kind:   kind,
 		}
