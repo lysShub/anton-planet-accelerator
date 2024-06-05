@@ -11,10 +11,10 @@ import (
 )
 
 type Header struct {
-	Server netip.Addr
-	Client netip.Addr
-	Proto  uint8
 	Kind   Kind
+	Proto  uint8
+	Client netip.Addr
+	Server netip.Addr
 }
 
 func (h *Header) Valid() bool {
@@ -54,8 +54,8 @@ func (h *Header) Encode(to *packet.Packet) error {
 	}
 
 	to.Attach(h.Server.AsSlice()...)
-	to.Attach(h.Proto)
 	to.Attach(h.Client.AsSlice()...)
+	to.Attach(h.Proto)
 	to.Attach(byte(h.Kind))
 	return nil
 }
@@ -63,7 +63,7 @@ func (h *Header) Encode(to *packet.Packet) error {
 func (h *Header) Decode(from *packet.Packet) error {
 	b := from.Bytes()
 	if len(b) < HeaderSize {
-		return errors.Errorf("packet too short %d", len(b))
+		return errors.Errorf("too short %d", len(b))
 	}
 
 	h.Kind = Kind(b[0])
@@ -71,7 +71,7 @@ func (h *Header) Decode(from *packet.Packet) error {
 	h.Client = netip.AddrFrom4([4]byte(b[2:6]))
 	h.Server = netip.AddrFrom4([4]byte(b[6:10]))
 	if !h.Valid() {
-		return errors.Errorf("invalid header %#v", h)
+		return errors.Errorf("invalid header %s", h.String())
 	}
 
 	from.DetachN(HeaderSize)

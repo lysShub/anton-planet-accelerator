@@ -18,10 +18,10 @@ func Test_Proto(t *testing.T) {
 
 	var pkt = packet.From([]byte(msg))
 	var h1 = Header{
-		Server: test.RandIP(),
-		Proto:  syscall.IPPROTO_UDP,
-		Client: test.RandIP(),
 		Kind:   PacketLossProxyer,
+		Proto:  syscall.IPPROTO_UDP,
+		Server: test.RandIP(),
+		Client: test.RandIP(),
 	}
 	h1.Encode(pkt)
 

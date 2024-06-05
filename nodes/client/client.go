@@ -142,10 +142,10 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 	for _, kind := range []proto.Kind{proto.PingProxyer, proto.PacketLossProxyer, proto.PingForward, proto.PacketLossForward} {
 		var pkt = packet.Make(proto.HeaderSize)
 		var hdr = proto.Header{
-			Server: netip.IPv4Unspecified(),
-			Client: netip.IPv4Unspecified(),
-			Proto:  syscall.IPPROTO_TCP,
 			Kind:   kind,
+			Proto:  syscall.IPPROTO_TCP,
+			Client: netip.IPv4Unspecified(),
+			Server: netip.IPv4Unspecified(),
 		}
 		if err := hdr.Encode(pkt); err != nil {
 			return nil, c.close(err)
@@ -194,7 +194,7 @@ func (c *Client) captureService() (_ error) {
 	var (
 		addr divert.Address
 		ip   = packet.Make(0, c.config.MaxRecvBuff)
-		hdr  = proto.Header{Kind: proto.Data}
+		hdr  = proto.Header{Kind: proto.Data, Client: netip.IPv4Unspecified()}
 	)
 
 	for {
