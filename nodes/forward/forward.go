@@ -119,7 +119,7 @@ func (f *Forward) recvService() (err error) {
 			if err != nil {
 				return f.close(err)
 			}
-		case proto.PacketLossForward:
+		case proto.PackLossUplink:
 			pkt.SetHead(head).Append(proto.PL(stats.pl.PL()).Encode()...)
 			_, err = f.conn.WriteToUDPAddrPort(pkt.Bytes(), paddr)
 			if err != nil {

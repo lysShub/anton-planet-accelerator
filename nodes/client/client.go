@@ -132,10 +132,10 @@ func (c *Client) AddProxyer(proxyer netip.AddrPort, proxyLocation geodist.Coord)
 }
 
 type NetworkStats struct {
-	PingProxyer       time.Duration
-	PingForward       time.Duration
-	PacketLossProxyer proto.PL
-	PacketLossForward proto.PL
+	PingProxyer      time.Duration
+	PingForward      time.Duration
+	PackLossUplink   proto.PL
+	PackLossDownlink proto.PL
 }
 
 func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
@@ -143,7 +143,9 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, kind := range []proto.Kind{proto.PingProxyer, proto.PacketLossProxyer, proto.PingForward, proto.PacketLossForward} {
+	for _, kind := range []proto.Kind{
+		proto.PingProxyer, proto.PingForward, proto.PackLossUplink,
+	} {
 		var pkt = packet.Make(proto.HeaderSize)
 		var hdr = proto.Header{
 			Kind:   kind,
@@ -174,13 +176,8 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 					stats.PingProxyer = time.Since(start)
 				case proto.PingForward:
 					stats.PingForward = time.Since(start)
-				case proto.PacketLossProxyer:
-					err := stats.PacketLossProxyer.Decode(msg.data)
-					if err != nil {
-						return &stats, err
-					}
-				case proto.PacketLossForward:
-					err := stats.PacketLossForward.Decode(msg.data)
+				case proto.PackLossUplink:
+					err := stats.PackLossUplink.Decode(msg.data)
 					if err != nil {
 						return &stats, err
 					}
@@ -192,6 +189,8 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 			}
 		}
 	}
+	stats.PackLossDownlink = proto.PL(c.pl.PL())
+
 	return &stats, nil
 }
 

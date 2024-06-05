@@ -12,14 +12,13 @@ func _() {
 	_ = x[Data-2]
 	_ = x[PingProxyer-3]
 	_ = x[PingForward-4]
-	_ = x[PacketLossProxyer-5]
-	_ = x[PacketLossForward-6]
-	_ = x[_kind_end-7]
+	_ = x[PackLossUplink-5]
+	_ = x[_kind_end-6]
 }
 
-const _Kind_name = "_kind_startDataPingProxyerPingForwardPacketLossProxyerPacketLossForward_kind_end"
+const _Kind_name = "_kind_startDataPingProxyerPingForwardPackLossUplink_kind_end"
 
-var _Kind_index = [...]uint8{0, 11, 15, 26, 37, 54, 71, 80}
+var _Kind_index = [...]uint8{0, 11, 15, 26, 37, 51, 60}
 
 func (i Kind) String() string {
 	i -= 1

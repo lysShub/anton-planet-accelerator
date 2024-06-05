@@ -44,8 +44,7 @@ const (
 	Data
 	PingProxyer
 	PingForward
-	PacketLossProxyer
-	PacketLossForward
+	PackLossUplink
 	_kind_end
 )
 
@@ -106,4 +105,15 @@ func (p PL) Valid() error {
 		return errors.New("invalid pack loss")
 	}
 	return nil
+}
+func (p PL) String() string {
+	if p < 0.0001 {
+		return "00.0"
+	}
+
+	v := float64(p * 100)
+	v1 := int(v)
+	v2 := int((v - float64(v1)) * 10)
+
+	return fmt.Sprintf("%02d.%d", v1, v2)
 }

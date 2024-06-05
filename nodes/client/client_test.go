@@ -26,7 +26,7 @@ var (
 func TestXxxx(t *testing.T) {
 	divert.MustLoad(divert.DLL)
 
-	accelerator.Warthunder = "curl.exe"
+	// accelerator.Warthunder = "curl.exe"
 
 	fmt.Println(debug.Debug(), accelerator.Warthunder)
 
@@ -49,7 +49,10 @@ func TestXxxx(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		fmt.Printf("Ping: %s + %s \n", stats.PingProxyer.String(), stats.PingForward.String())
+		fmt.Printf("Ping: %s + %s    PL: %s  %s \n",
+			stats.PingProxyer.String(), stats.PingForward.String(),
+			stats.PackLossUplink.String(), stats.PackLossUplink.String(),
+		)
 
 		time.Sleep(time.Second * 4)
 	}
