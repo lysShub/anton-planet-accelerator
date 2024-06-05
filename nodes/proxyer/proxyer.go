@@ -13,7 +13,6 @@ import (
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Proxyer struct {
@@ -92,7 +91,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
-		hdr.Client = caddr.Addr()
+		hdr.Client = caddr
 		if err := hdr.Encode(pkt); err != nil {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
@@ -140,8 +139,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 		}
 		pkt.AttachN(proto.HeaderSize)
 
-		caddr := netip.AddrPortFrom(hdr.Client, header.TCP(pkt.Bytes()).DestinationPort())
-		_, err = p.conn.WriteToUDPAddrPort(pkt.Bytes(), caddr)
+		_, err = p.conn.WriteToUDPAddrPort(pkt.Bytes(), hdr.Client)
 		if err != nil {
 			return p.close(err)
 		}

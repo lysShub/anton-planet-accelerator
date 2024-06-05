@@ -13,12 +13,12 @@ import (
 type Header struct {
 	Kind   Kind
 	Proto  uint8
-	Client netip.Addr
+	Client netip.AddrPort
 	Server netip.Addr
 }
 
 func (h *Header) Valid() bool {
-	return h != nil && h.Server.Is4() && h.Client.Is4() &&
+	return h != nil && h.Server.Is4() && h.Client.Addr().Is4() &&
 		(h.Proto == syscall.IPPROTO_UDP || h.Proto == syscall.IPPROTO_TCP) &&
 		h.Kind.Valid()
 }
@@ -37,7 +37,7 @@ func (k Kind) Valid() bool {
 }
 
 const (
-	HeaderSize = 10
+	HeaderSize = 12
 
 	_kind_start Kind = iota
 	Data
@@ -54,7 +54,8 @@ func (h *Header) Encode(to *packet.Packet) error {
 	}
 
 	to.Attach(h.Server.AsSlice()...)
-	to.Attach(h.Client.AsSlice()...)
+	to.Attach(h.Client.Addr().AsSlice()...)
+	to.Attach(byte(h.Client.Port()), byte(h.Client.Port()>>8))
 	to.Attach(h.Proto)
 	to.Attach(byte(h.Kind))
 	return nil
@@ -68,8 +69,11 @@ func (h *Header) Decode(from *packet.Packet) error {
 
 	h.Kind = Kind(b[0])
 	h.Proto = b[1]
-	h.Client = netip.AddrFrom4([4]byte(b[2:6]))
-	h.Server = netip.AddrFrom4([4]byte(b[6:10]))
+	h.Client = netip.AddrPortFrom(
+		netip.AddrFrom4([4]byte(b[4:8])),
+		uint16(b[2])+uint16(b[3])<<8,
+	)
+	h.Server = netip.AddrFrom4([4]byte(b[8:12]))
 	if !h.Valid() {
 		return errors.Errorf("invalid header %s", h.String())
 	}

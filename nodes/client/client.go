@@ -144,7 +144,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 		var hdr = proto.Header{
 			Kind:   kind,
 			Proto:  syscall.IPPROTO_TCP,
-			Client: netip.IPv4Unspecified(),
+			Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0),
 			Server: netip.IPv4Unspecified(),
 		}
 		if err := hdr.Encode(pkt); err != nil {
@@ -194,7 +194,7 @@ func (c *Client) captureService() (_ error) {
 	var (
 		addr divert.Address
 		ip   = packet.Make(0, c.config.MaxRecvBuff)
-		hdr  = proto.Header{Kind: proto.Data, Client: netip.IPv4Unspecified()}
+		hdr  = proto.Header{Kind: proto.Data, Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0)}
 	)
 
 	for {

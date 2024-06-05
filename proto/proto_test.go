@@ -1,6 +1,7 @@
 package proto
 
 import (
+	"net/netip"
 	"syscall"
 	"testing"
 
@@ -21,7 +22,7 @@ func Test_Proto(t *testing.T) {
 		Kind:   PacketLossProxyer,
 		Proto:  syscall.IPPROTO_UDP,
 		Server: test.RandIP(),
-		Client: test.RandIP(),
+		Client: netip.AddrPortFrom(test.RandIP(), test.RandPort()),
 	}
 	h1.Encode(pkt)
 
