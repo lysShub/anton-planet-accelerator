@@ -61,6 +61,7 @@ func New(config *Config) (*Client, error) {
 	var c = &Client{
 		config:    config.init(),
 		msgRecver: make(chan msg, 8),
+		pl:        &nodes.PLStats{},
 	}
 	var err error
 

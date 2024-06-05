@@ -39,8 +39,9 @@ type stats struct {
 
 func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) {
 	var p = &Proxyer{
-		config:  config.init(),
-		forward: forward,
+		config:    config.init(),
+		forward:   forward,
+		connStats: map[netip.AddrPort]*stats{},
 	}
 
 	laddr, err := net.ResolveUDPAddr("udp4", addr)

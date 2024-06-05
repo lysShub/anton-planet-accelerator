@@ -54,7 +54,11 @@ func (l link) String() string {
 }
 
 func New(addr string, config *Config) (*Forward, error) {
-	var f = &Forward{config: config.init(), links: map[link]*Link{}}
+	var f = &Forward{
+		config:    config.init(),
+		connStats: map[netip.AddrPort]*stats{},
+		links:     map[link]*Link{},
+	}
 
 	laddr, err := net.ResolveUDPAddr("udp4", addr)
 	if err != nil {
