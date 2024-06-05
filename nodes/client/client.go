@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"slices"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -34,6 +35,8 @@ type Client struct {
 	laddr  netip.AddrPort
 
 	conn *net.UDPConn
+	id   atomic.Uint32
+	pl   *nodes.PLStats
 
 	mapping mapping.Mapping
 
@@ -144,6 +147,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 		var hdr = proto.Header{
 			Kind:   kind,
 			Proto:  syscall.IPPROTO_TCP,
+			ID:     uint8(c.id.Add(1)),
 			Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0),
 			Server: netip.IPv4Unspecified(),
 		}
@@ -249,6 +253,7 @@ func (c *Client) captureService() (_ error) {
 		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
 		hdr.Proto = uint8(s.Proto)
 		hdr.Server = s.Dst.Addr()
+		hdr.ID = uint8(c.id.Add(1))
 		hdr.Encode(ip)
 		if _, err = c.conn.WriteToUDPAddrPort(ip.Bytes(), next); err != nil {
 			return c.close(err)
@@ -274,6 +279,7 @@ func (c *Client) injectServic() (_ error) {
 			c.config.logger.Error(err.Error(), errorx.Trace(err))
 			continue
 		}
+		c.pl.Pack(int(hdr.ID))
 
 		if hdr.Kind != proto.Data {
 			select {

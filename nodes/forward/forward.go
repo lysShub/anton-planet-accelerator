@@ -9,7 +9,9 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 
+	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
@@ -23,10 +25,18 @@ type Forward struct {
 
 	conn *net.UDPConn
 
+	connStatsMu sync.RWMutex
+	connStats   map[netip.AddrPort]*stats
+
 	linkMu sync.RWMutex
 	links  map[link]*Link
 
 	closeErr errorx.CloseErr
+}
+
+type stats struct {
+	pl *nodes.PLStats
+	id atomic.Uint32
 }
 
 type link struct {
@@ -97,18 +107,16 @@ func (f *Forward) recvService() (err error) {
 			f.config.logger.Error(err.Error(), errorx.Trace(err))
 			continue
 		}
+		stats := f.statsRecv(hdr.Client, hdr.ID)
 
 		switch hdr.Kind {
 		case proto.PingForward:
-
 			_, err := f.conn.WriteToUDPAddrPort(pkt.SetHead(head).Bytes(), paddr)
 			if err != nil {
 				return f.close(err)
 			}
 		case proto.PacketLossForward:
-			var pl proto.PL = 0.11 // todo:
-
-			pkt.SetHead(head).Append(pl.Encode()...)
+			pkt.SetHead(head).Append(proto.PL(stats.pl.PL()).Encode()...)
 			_, err = f.conn.WriteToUDPAddrPort(pkt.Bytes(), paddr)
 			if err != nil {
 				return f.close(err)
@@ -142,9 +150,26 @@ func (f *Forward) recvService() (err error) {
 	}
 }
 
+func (f *Forward) statsRecv(caddr netip.AddrPort, id uint8) *stats {
+	f.connStatsMu.RLock()
+	s, has := f.connStats[caddr]
+	f.connStatsMu.RUnlock()
+	if !has {
+		s = &stats{
+			pl: &nodes.PLStats{},
+		}
+		f.connStatsMu.Lock()
+		f.connStats[caddr] = s
+		f.connStatsMu.Unlock()
+	}
+	s.pl.Pack(int(id))
+	return s
+}
+
 func (f *Forward) sendService(raw *Link) (_ error) {
 	var (
 		pkt = packet.Make(f.config.MaxRecvBuffSize)
+		hdr = proto.Header{}
 	)
 
 	for {
@@ -152,11 +177,37 @@ func (f *Forward) sendService(raw *Link) (_ error) {
 			return f.deleteRaw(raw)
 		}
 
+		// todo: optimize header
+		if err := hdr.Decode(pkt); err != nil {
+			f.config.logger.Warn(err.Error(), errorx.Trace(err))
+			continue
+		}
+		hdr.ID = f.statsDown(hdr.Client)
+		if err := hdr.Encode(pkt); err != nil {
+			f.config.logger.Warn(err.Error(), errorx.Trace(err))
+			continue
+		}
+
 		_, err := f.conn.WriteToUDPAddrPort(pkt.Bytes(), raw.Proxyer())
 		if err != nil {
 			return f.close(err)
 		}
 	}
+}
+
+func (f *Forward) statsDown(caddr netip.AddrPort) uint8 {
+	f.connStatsMu.RLock()
+	s, has := f.connStats[caddr]
+	f.connStatsMu.RUnlock()
+	if !has {
+		s = &stats{
+			pl: &nodes.PLStats{},
+		}
+		f.connStatsMu.Lock()
+		f.connStats[caddr] = s
+		f.connStatsMu.Unlock()
+	}
+	return uint8(s.id.Add(1))
 }
 
 func (f *Forward) deleteRaw(raw *Link) error {
