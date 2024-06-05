@@ -37,8 +37,8 @@ type link struct {
 
 func (l link) String() string {
 	return fmt.Sprintf(
-		"{ID:%d, Proto:%d,ProcessPort:%d, Server:%s}",
-		l.header.ID, l.header.Proto, l.processPort,
+		"{Client:%s, Proto:%d,ProcessPort:%d, Server:%s}",
+		l.header.Client.String(), l.header.Proto, l.processPort,
 		netip.AddrPortFrom(l.header.Server, l.serverPort),
 	)
 }

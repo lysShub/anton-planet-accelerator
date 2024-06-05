@@ -27,8 +27,6 @@ func TestXxxx(t *testing.T) {
 	p, err := proxyer.New(":19986", forward, &config)
 	require.NoError(t, err)
 
-	p.AddClient(1)
-
 	err = p.Serve()
 	require.NoError(t, err)
 }

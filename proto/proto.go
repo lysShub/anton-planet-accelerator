@@ -1,7 +1,6 @@
 package proto
 
 import (
-	"encoding/binary"
 	"fmt"
 	"net/netip"
 	"strconv"
@@ -13,8 +12,8 @@ import (
 
 type Header struct {
 	Server netip.Addr
+	Client netip.Addr
 	Proto  uint8
-	ID     ID
 	Kind   Kind
 }
 
@@ -25,12 +24,10 @@ func (h *Header) Valid() bool {
 }
 func (h Header) String() string {
 	return fmt.Sprintf(
-		"{Server:%s, Proto:%d, ID:%d, Kind:%s}",
-		h.Server.String(), h.Proto, h.ID, h.Kind.String(),
+		"{Server:%s, Client:%s, Proto:%d,  Kind:%s}",
+		h.Server.String(), h.Client.String(), h.Proto, h.Kind.String(),
 	)
 }
-
-type ID uint16
 
 //go:generate stringer -output proto_gen.go -type=Kind
 type Kind uint8
@@ -40,7 +37,7 @@ func (k Kind) Valid() bool {
 }
 
 const (
-	HeaderSize = 8
+	HeaderSize = 10
 
 	_kind_start Kind = iota
 	Data
@@ -58,7 +55,7 @@ func (h *Header) Encode(to *packet.Packet) error {
 
 	to.Attach(h.Server.AsSlice()...)
 	to.Attach(h.Proto)
-	to.Attach(binary.BigEndian.AppendUint16(nil, uint16(h.ID))...)
+	to.Attach(h.Client.AsSlice()...)
 	to.Attach(byte(h.Kind))
 	return nil
 }
@@ -70,9 +67,9 @@ func (h *Header) Decode(from *packet.Packet) error {
 	}
 
 	h.Kind = Kind(b[0])
-	h.ID = ID(binary.BigEndian.Uint16(b[1:3]))
-	h.Proto = b[3]
-	h.Server = netip.AddrFrom4([4]byte(b[4:8]))
+	h.Proto = b[1]
+	h.Client = netip.AddrFrom4([4]byte(b[2:6]))
+	h.Server = netip.AddrFrom4([4]byte(b[6:10]))
 	if !h.Valid() {
 		return errors.Errorf("invalid header %#v", h)
 	}

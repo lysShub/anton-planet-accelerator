@@ -31,7 +31,6 @@ import (
 
 type Client struct {
 	config *Config
-	id     proto.ID
 	laddr  netip.AddrPort
 
 	conn *net.UDPConn
@@ -55,9 +54,9 @@ type msg struct {
 	data   []byte
 }
 
-func New(id proto.ID, config *Config) (*Client, error) {
+func New(config *Config) (*Client, error) {
 	var c = &Client{
-		config: config.init(), id: id,
+		config:    config.init(),
 		msgRecver: make(chan msg, 8),
 	}
 	var err error
@@ -145,7 +144,6 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 		var hdr = proto.Header{
 			Server: netip.IPv4Unspecified(),
 			Proto:  syscall.IPPROTO_TCP,
-			ID:     c.id,
 			Kind:   kind,
 		}
 		if err := hdr.Encode(pkt); err != nil {
@@ -195,7 +193,7 @@ func (c *Client) captureService() (_ error) {
 	var (
 		addr divert.Address
 		ip   = packet.Make(0, c.config.MaxRecvBuff)
-		hdr  = proto.Header{ID: c.id, Kind: proto.Data}
+		hdr  = proto.Header{Kind: proto.Data}
 	)
 
 	for {
@@ -265,7 +263,7 @@ func (c *Client) injectServic() (_ error) {
 	)
 
 	for {
-		n, paddr, err := c.conn.ReadFromUDPAddrPort(pkt.Sets(64, 0xffff).Bytes())
+		n, _, err := c.conn.ReadFromUDPAddrPort(pkt.Sets(64, 0xffff).Bytes())
 		if err != nil {
 			return c.close(err)
 		}
@@ -273,9 +271,6 @@ func (c *Client) injectServic() (_ error) {
 
 		if err := hdr.Decode(pkt); err != nil {
 			c.config.logger.Error(err.Error(), errorx.Trace(err))
-			continue
-		} else if hdr.ID != c.id {
-			c.config.logger.Warn("recv invalid client id", slog.Int("recv", int(hdr.ID)), slog.Int("expect", int(c.id)), slog.String("proxyer", paddr.String()))
 			continue
 		}
 

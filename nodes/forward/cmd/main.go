@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// go build -tags "debug" -race .
 func main() {
 	fmt.Println(debug.Debug())
 	t := test.T()

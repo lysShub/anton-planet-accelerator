@@ -39,7 +39,7 @@ func TestXxxx(t *testing.T) {
 	}
 	os.Remove(config.PcapPath)
 
-	c, err := client.New(1, config)
+	c, err := client.New(config)
 	require.NoError(t, err)
 	c.AddProxyer(netip.MustParseAddrPort("8.137.91.200:19986"), Moscow)
 

@@ -1,7 +1,6 @@
 package proto
 
 import (
-	"math/rand"
 	"syscall"
 	"testing"
 
@@ -21,7 +20,7 @@ func Test_Proto(t *testing.T) {
 	var h1 = Header{
 		Server: test.RandIP(),
 		Proto:  syscall.IPPROTO_UDP,
-		ID:     ID(uint16(rand.Uint32())),
+		Client: test.RandIP(),
 		Kind:   PacketLossProxyer,
 	}
 	h1.Encode(pkt)

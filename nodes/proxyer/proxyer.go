@@ -7,13 +7,13 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
-	"sync"
 
 	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Proxyer struct {
@@ -24,9 +24,6 @@ type Proxyer struct {
 
 	sender *net.UDPConn
 
-	clientMu sync.RWMutex
-	clients  map[proto.ID]netip.AddrPort // id:client
-
 	closeErr errorx.CloseErr
 }
 
@@ -34,7 +31,6 @@ func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) 
 	var p = &Proxyer{
 		config:  config.init(),
 		forward: forward,
-		clients: map[proto.ID]netip.AddrPort{},
 	}
 
 	laddr, err := net.ResolveUDPAddr("udp4", addr)
@@ -79,12 +75,6 @@ func (p *Proxyer) Serve() error {
 	return p.close(p.uplinkService())
 }
 
-func (p *Proxyer) AddClient(id proto.ID /* key [16]byte */) {
-	p.clientMu.Lock()
-	defer p.clientMu.Unlock()
-	p.clients[id] = netip.AddrPort{}
-}
-
 func (p *Proxyer) uplinkService() (_ error) {
 	var (
 		pkt = packet.Make(p.config.MaxRecvBuff)
@@ -103,19 +93,6 @@ func (p *Proxyer) uplinkService() (_ error) {
 			continue
 		}
 		pkt.AttachN(proto.HeaderSize)
-
-		p.clientMu.RLock()
-		cli, has := p.clients[hdr.ID]
-		p.clientMu.RUnlock()
-		if !has {
-			continue
-		} else if !cli.IsValid() {
-			p.config.logger.Info("new client", slog.String("header", hdr.String()), slog.String("client", caddr.String()))
-
-			p.clientMu.Lock()
-			p.clients[hdr.ID] = caddr
-			p.clientMu.Unlock()
-		}
 
 		switch hdr.Kind {
 		case proto.PingProxyer:
@@ -159,14 +136,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 		}
 		pkt.AttachN(proto.HeaderSize)
 
-		p.clientMu.Lock()
-		caddr, has := p.clients[hdr.ID]
-		p.clientMu.Unlock()
-		if !has {
-			p.config.logger.Warn("invalid client id", slog.String("header", hdr.String()))
-			continue
-		}
-
+		caddr := netip.AddrPortFrom(hdr.Client, header.TCP(pkt.Bytes()).DestinationPort())
 		_, err = p.conn.WriteToUDPAddrPort(pkt.Bytes(), caddr)
 		if err != nil {
 			return p.close(err)
