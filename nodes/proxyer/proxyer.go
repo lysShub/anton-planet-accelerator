@@ -92,7 +92,11 @@ func (p *Proxyer) uplinkService() (_ error) {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
-		pkt.AttachN(proto.HeaderSize)
+		hdr.Client = caddr.Addr()
+		if err := hdr.Encode(pkt); err != nil {
+			p.config.logger.Warn(err.Error(), errorx.Trace(err))
+			continue
+		}
 
 		switch hdr.Kind {
 		case proto.PingProxyer:

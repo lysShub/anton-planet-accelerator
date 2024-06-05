@@ -19,8 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// go test -race -v -tags "debug" -run TestXxxx
-
 var (
 	Moscow = geodist.Coord{Lon: 37.56, Lat: 55.75}
 )
