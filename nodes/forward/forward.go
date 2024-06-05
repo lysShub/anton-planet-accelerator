@@ -128,6 +128,7 @@ func (f *Forward) recvService() (err error) {
 		case proto.Data:
 			t := header.TCP(pkt.Bytes()) // only get port, tcp/udp is same
 			link := link{header: hdr, processPort: t.SourcePort(), serverPort: t.DestinationPort()}
+			link.header.ID = 0
 
 			f.linkMu.RLock()
 			raw, has := f.links[link]
