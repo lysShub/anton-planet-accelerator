@@ -279,7 +279,7 @@ func (c *Client) injectServic() (_ error) {
 			c.config.logger.Error(err.Error(), errorx.Trace(err))
 			continue
 		}
-		c.pl.Pack(int(hdr.ID))
+		c.pl.ID(int(hdr.ID))
 
 		if hdr.Kind != proto.Data {
 			select {

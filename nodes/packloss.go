@@ -8,7 +8,8 @@ type PLStats struct {
 	mu       sync.RWMutex
 	deltaSum int
 	count    int
-	last     int
+	lastId   int
+	lastPl   float64
 }
 
 func (p *PLStats) PL() float64 {
@@ -16,6 +17,8 @@ func (p *PLStats) PL() float64 {
 	defer p.mu.Unlock()
 	if p.count == 0 {
 		return 0
+	} else if p.count < 64 {
+		return p.lastPl
 	}
 
 	dropedCount := p.count - 1 - p.deltaSum
@@ -26,11 +29,12 @@ func (p *PLStats) PL() float64 {
 
 	p.deltaSum = 0
 	p.count = 0
-	p.last = 0
+	p.lastId = 0
+	p.lastPl = pl
 	return pl
 }
 
-func (p *PLStats) Pack(id int) int {
+func (p *PLStats) ID(id int) int {
 	if id < 0 {
 		panic("require >= 0")
 	}
@@ -38,14 +42,14 @@ func (p *PLStats) Pack(id int) int {
 	defer p.mu.RUnlock()
 
 	if p.count == 0 {
-		p.last = id
+		p.lastId = id
 	} else {
 		if id == 0 {
 			p.count--
 		} else {
-			p.deltaSum += id - p.last
+			p.deltaSum += id - p.lastId
 		}
-		p.last = id
+		p.lastId = id
 	}
 	p.count++
 

@@ -51,7 +51,7 @@ func TestXxxx(t *testing.T) {
 
 		fmt.Printf("Ping: %s + %s    PL: %s  %s \n",
 			stats.PingProxyer.String(), stats.PingForward.String(),
-			stats.PackLossUplink.String(), stats.PackLossUplink.String(),
+			stats.PackLossUplink.String(), stats.PackLossDownlink.String(),
 		)
 
 		time.Sleep(time.Second * 4)

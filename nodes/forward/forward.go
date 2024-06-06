@@ -167,7 +167,7 @@ func (f *Forward) statsRecv(caddr netip.AddrPort, id uint8) *stats {
 		f.connStats[caddr] = s
 		f.connStatsMu.Unlock()
 	}
-	s.pl.Pack(int(id))
+	s.pl.ID(int(id))
 	return s
 }
 
