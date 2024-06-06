@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/lysShub/anton-planet-accelerator/nodes"
@@ -28,6 +29,7 @@ type Link struct {
 	link    link
 	proxyer netip.AddrPort
 	laddr   netip.AddrPort
+	count   atomic.Uint32
 
 	closeErr errorx.CloseErr
 }
@@ -88,6 +90,7 @@ func (r *Link) Recv(pkt *packet.Packet) error {
 		return r.close(err)
 	}
 	pkt.SetData(n)
+	r.count.Add(1)
 
 	hdr := header.TCP(pkt.Bytes())
 	if debug.Debug() {
@@ -104,6 +107,7 @@ func (r *Link) Send(pkt *packet.Packet) error {
 		// todo
 	}
 
+	r.count.Add(1)
 	_, err := r.raw.Write(pkt.Bytes())
 	return errors.WithStack(err)
 }
@@ -111,6 +115,7 @@ func (r *Link) Link() link              { return r.link }
 func (r *Link) Proxyer() netip.AddrPort { return r.proxyer }
 func (r *Link) LocalAddr() net.Addr     { return r.l.Addr() }
 func (r *Link) Close() error            { return r.close(nil) }
+func (r *Link) Alived() bool            { return r.count.Swap(0) > 0 }
 
 type udpLister struct {
 	*net.UDPConn

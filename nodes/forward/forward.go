@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/proto"
@@ -47,7 +48,7 @@ type link struct {
 
 func (l link) String() string {
 	return fmt.Sprintf(
-		"{Client:%s, Proto:%d,ProcessPort:%d, Server:%s}",
+		"{Client:%s,Proto:%d,ProcessPort:%d,Server:%s}",
 		l.header.Client.String(), l.header.Proto, l.processPort,
 		netip.AddrPortFrom(l.header.Server, l.serverPort),
 	)
@@ -134,25 +135,56 @@ func (f *Forward) recvService() (err error) {
 			raw, has := f.links[link]
 			f.linkMu.RUnlock()
 			if !has {
-				raw, err = NewLink(link, paddr)
+				raw, err = f.addLink(link, paddr)
 				if err != nil {
 					return f.close(err)
 				}
-				f.config.logger.Info("new link", slog.String("link", link.String()), slog.String("local", raw.LocalAddr().String()))
-
-				f.linkMu.Lock()
-				f.links[link] = raw
-				f.linkMu.Unlock()
-				go f.sendService(raw)
 			}
 
 			if err = raw.Send(pkt); err != nil {
-				f.deleteRaw(raw)
+				f.delLink(raw.Link())
 			}
 		default:
 			f.config.logger.Warn("invalid header", slog.String("header", hdr.String()), slog.String("proxyer", paddr.String()))
 		}
 	}
+}
+
+func (f *Forward) addLink(link link, paddr netip.AddrPort) (*Link, error) {
+	raw, err := NewLink(link, paddr)
+	if err != nil {
+		return nil, f.close(err)
+	}
+	f.config.logger.Info("new link", slog.String("link", link.String()), slog.String("local", raw.LocalAddr().String()))
+
+	f.linkMu.Lock()
+	f.links[link] = raw
+	f.linkMu.Unlock()
+	go f.sendService(raw)
+
+	time.AfterFunc(durtion, func() { f.delLink(link) })
+	return raw, nil
+}
+
+const durtion = time.Second * 30
+
+func (f *Forward) delLink(link link) error {
+	f.linkMu.RLock()
+	l := f.links[link]
+	f.linkMu.RUnlock()
+	if l != nil {
+		if l.Alived() {
+			time.AfterFunc(durtion, func() { f.delLink(link) })
+		} else {
+			f.linkMu.Lock()
+			delete(f.links, link)
+			f.linkMu.Unlock()
+
+			f.config.logger.Info("delect link", slog.String("link", link.String()))
+			return l.Close()
+		}
+	}
+	return nil
 }
 
 func (f *Forward) statsRecv(caddr netip.AddrPort, id uint8) *stats {
@@ -179,7 +211,7 @@ func (f *Forward) sendService(raw *Link) (_ error) {
 
 	for {
 		if err := raw.Recv(pkt.Sets(64, 0xffff)); err != nil {
-			return f.deleteRaw(raw)
+			return f.delLink(raw.Link())
 		}
 
 		// todo: optimize header
@@ -213,13 +245,4 @@ func (f *Forward) statsDown(caddr netip.AddrPort) uint8 {
 		f.connStatsMu.Unlock()
 	}
 	return uint8(s.id.Add(1))
-}
-
-func (f *Forward) deleteRaw(raw *Link) error {
-	f.config.logger.Info("delect link", slog.String("link", raw.link.String()))
-
-	f.linkMu.Lock()
-	delete(f.links, raw.Link())
-	f.linkMu.Unlock()
-	return raw.Close()
 }
