@@ -126,7 +126,7 @@ func (f *Forward) recvService() (err error) {
 			if err != nil {
 				return f.close(err)
 			}
-		case proto.Data:
+		case proto.Data, proto.RouteProbe:
 			t := header.TCP(pkt.Bytes()) // only get port, tcp/udp is same
 			link := link{header: hdr, processPort: t.SourcePort(), serverPort: t.DestinationPort()}
 			link.header.ID = 0

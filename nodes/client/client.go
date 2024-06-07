@@ -13,7 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jftuga/geodist"
 	accelerator "github.com/lysShub/anton-planet-accelerator"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	proto "github.com/lysShub/anton-planet-accelerator/proto"
@@ -34,34 +33,41 @@ type Client struct {
 	config *Config
 	laddr  netip.AddrPort
 
-	conn *net.UDPConn
-	id   atomic.Uint32
-	pl   *nodes.PLStats
-
 	mapping mapping.Mapping
 
 	capture *divert.Handle
 	inbound divert.Address
 
+	conn *net.UDPConn
+	id   atomic.Uint32
+	pl   *nodes.PLStats
+
+	proxyers []netip.AddrPort
+	// routeMu        sync.RWMutex
+	// route     map[netip.Addr]netip.AddrPort // server-addr:proxyer-addr
+	// currentProxyer netip.AddrPort
+	route *route
+
 	msgRecver chan msg
 
 	pcap *pcap.Pcap
-
-	route *Route
 
 	closeErr errorx.CloseErr
 }
 
 type msg struct {
-	header proto.Header
-	data   []byte
+	proxyer netip.AddrPort
+	header  proto.Header
+	data    []byte
 }
 
-func New(config *Config) (*Client, error) {
+func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
 	var c = &Client{
 		config:    config.init(),
-		msgRecver: make(chan msg, 8),
 		pl:        &nodes.PLStats{},
+		proxyers:  proxyers,
+		route:     NewRoute(proxyers[0]),
+		msgRecver: make(chan msg, 8),
 	}
 	var err error
 
@@ -94,7 +100,6 @@ func New(config *Config) (*Client, error) {
 		}
 	}
 
-	c.route = NewRoute()
 	return c, nil
 }
 
@@ -126,11 +131,6 @@ func (c *Client) Start() {
 	go c.injectServic()
 }
 
-// AddProxyer add a proxyer
-func (c *Client) AddProxyer(proxyer netip.AddrPort, proxyLocation geodist.Coord) {
-	c.route.AddProxyer(proxyer, proxyLocation)
-}
-
 type NetworkStats struct {
 	PingProxyer      time.Duration
 	PingForward      time.Duration
@@ -139,10 +139,6 @@ type NetworkStats struct {
 }
 
 func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
-	next, err := c.route.CurrentNext()
-	if err != nil {
-		return nil, err
-	}
 	for _, kind := range []proto.Kind{
 		proto.PingProxyer, proto.PingForward, proto.PackLossUplink,
 	} {
@@ -157,7 +153,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 		if err := hdr.Encode(pkt); err != nil {
 			return nil, c.close(err)
 		}
-		if _, err := c.conn.WriteToUDPAddrPort(pkt.Bytes(), next); err != nil {
+		if _, err := c.conn.WriteToUDPAddrPort(pkt.Bytes(), c.route.ActiveProxyer()); err != nil {
 			return nil, c.close(err)
 		}
 	}
@@ -244,20 +240,45 @@ func (c *Client) captureService() (_ error) {
 			ip.SetHead(head)
 		}
 
-		next, err := c.route.Next(s.Dst.Addr())
-		if err != nil {
-			c.config.logger.Error(err.Error(), errorx.Trace(err))
-			continue
-		}
-
 		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
 		hdr.Proto = uint8(s.Proto)
 		hdr.Server = s.Dst.Addr()
 		hdr.ID = uint8(c.id.Add(1))
 		hdr.Encode(ip)
+
+		next := c.route.Next(hdr.Server)
+		if !next.IsValid() {
+			next, err = c.routeProbe(ip)
+			if err != nil {
+				return c.close(err)
+			} else if !next.IsValid() {
+				continue // drop this packet
+			}
+		}
 		if _, err = c.conn.WriteToUDPAddrPort(ip.Bytes(), next); err != nil {
 			return c.close(err)
 		}
+	}
+}
+
+func (c *Client) routeProbe(pkt *packet.Packet) (netip.AddrPort, error) {
+	switch len(c.proxyers) {
+	case 0:
+		return netip.AddrPort{}, errors.New("not proxyer")
+	case 1:
+		return c.proxyers[0], nil
+	default:
+		var hdr proto.Header
+		hdr.Decode(pkt)
+		hdr.Kind = proto.RouteProbe
+		hdr.ID = 0
+		hdr.Encode(pkt)
+
+		for _, e := range c.proxyers {
+			_, err := c.conn.WriteToUDPAddrPort(pkt.Bytes(), e)
+			return netip.AddrPort{}, err
+		}
+		return netip.AddrPort{}, nil
 	}
 }
 
@@ -269,7 +290,7 @@ func (c *Client) injectServic() (_ error) {
 	)
 
 	for {
-		n, _, err := c.conn.ReadFromUDPAddrPort(pkt.Sets(64, 0xffff).Bytes())
+		n, paddr, err := c.conn.ReadFromUDPAddrPort(pkt.Sets(64, 0xffff).Bytes())
 		if err != nil {
 			return c.close(err)
 		}
@@ -282,11 +303,10 @@ func (c *Client) injectServic() (_ error) {
 		c.pl.ID(int(hdr.ID))
 
 		if hdr.Kind != proto.Data {
-			select {
-			case c.msgRecver <- msg{header: *hdr, data: slices.Clone(pkt.Bytes())}:
-			default:
-				c.config.logger.Warn("msgRecver filled")
-			}
+			c.handleMsg(msg{
+				proxyer: paddr, header: *hdr,
+				data: slices.Clone(pkt.Bytes()),
+			})
 			continue
 		}
 
@@ -311,36 +331,15 @@ func (c *Client) injectServic() (_ error) {
 	}
 }
 
-// todo: optimzie
-func defaultAdapter() (*net.Interface, error) {
-	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.IP{8, 8, 8, 8}, Port: 53})
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	defer conn.Close()
-	laddr := netip.MustParseAddrPort(conn.LocalAddr().String()).Addr().As4()
-
-	ifs, err := net.Interfaces()
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	for _, i := range ifs {
-		if i.Flags&net.FlagRunning == 0 {
-			continue
-		}
-
-		addrs, err := i.Addrs()
-		if err != nil {
-			return nil, errors.WithStack(err)
-		}
-		for _, addr := range addrs {
-			if e, ok := addr.(*net.IPNet); ok && e.IP.To4() != nil {
-				if [4]byte(e.IP.To4()) == laddr {
-					return &i, nil
-				}
-			}
-		}
+func (c *Client) handleMsg(msg msg) {
+	if msg.header.Kind == proto.RouteProbe {
+		c.route.Add(msg.header.Server, msg.proxyer)
+		return
 	}
 
-	return nil, errors.Errorf("not found default adapter")
+	select {
+	case c.msgRecver <- msg:
+	default:
+		c.config.logger.Warn("msgRecver filled")
+	}
 }

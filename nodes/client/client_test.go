@@ -37,9 +37,12 @@ func TestXxxx(t *testing.T) {
 	}
 	os.Remove(config.PcapPath)
 
-	c, err := client.New(config)
+	proxyers := []netip.AddrPort{
+		netip.MustParseAddrPort("8.137.91.200:19986"),
+	}
+
+	c, err := client.New(proxyers, config)
 	require.NoError(t, err)
-	c.AddProxyer(netip.MustParseAddrPort("8.137.91.200:19986"), Moscow)
 
 	c.Start()
 
@@ -54,6 +57,6 @@ func TestXxxx(t *testing.T) {
 			stats.PackLossUplink.String(), stats.PackLossDownlink.String(),
 		)
 
-		time.Sleep(time.Second * 4)
+		time.Sleep(time.Second)
 	}
 }

@@ -45,6 +45,7 @@ const (
 	PingProxyer
 	PingForward
 	PackLossUplink
+	RouteProbe
 	_kind_end
 )
 
