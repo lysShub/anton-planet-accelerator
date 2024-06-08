@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/lysShub/anton-planet-accelerator/nodes"
+	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -99,6 +100,7 @@ func (r *Link) Recv(pkt *packet.Packet) error {
 	hdr.SetDestinationPort(r.link.processPort)
 
 	r.link.header.Encode(pkt)
+	r.link.header.Kind = proto.Data // maybe start with route-porbe
 	return nil
 }
 func (r *Link) Send(pkt *packet.Packet) error {

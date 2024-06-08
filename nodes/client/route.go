@@ -22,12 +22,18 @@ func NewRoute(defaultProxyer netip.AddrPort) *route {
 func (r *route) Next(server netip.Addr) (proxyer netip.AddrPort) {
 	r.mu.RLock()
 	proxyer = r.cache[server]
+	eq := r.active == proxyer
 	r.mu.RUnlock()
-	r.active = proxyer
+
+	if !eq && proxyer.IsValid() {
+		r.mu.Lock()
+		r.active = proxyer
+		r.mu.Unlock()
+	}
 	return proxyer
 }
 
-func (r *route) Add(server netip.Addr, proxyer netip.AddrPort) {
+func (r *route) Add(server netip.Addr, proxyer netip.AddrPort) bool {
 	r.mu.RLock()
 	_, has := r.cache[server]
 	r.mu.RUnlock()
@@ -36,8 +42,11 @@ func (r *route) Add(server netip.Addr, proxyer netip.AddrPort) {
 		r.cache[server] = proxyer
 		r.mu.Unlock()
 	}
+	return !has
 }
 
 func (r *route) ActiveProxyer() netip.AddrPort {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.active
 }

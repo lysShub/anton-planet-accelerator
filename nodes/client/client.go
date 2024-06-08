@@ -232,7 +232,7 @@ func (c *Client) captureService() (_ error) {
 		}
 
 		if s.Proto == header.TCPProtocolNumber {
-			fatun.UpdateTcpMssOption(ip.Bytes(), -c.config.TcpMssDelta)
+			fatun.UpdateTcpMssOption(ip.Bytes(), c.config.TcpMssDelta)
 		}
 		if c.pcap != nil {
 			head := ip.Head()
@@ -275,8 +275,12 @@ func (c *Client) routeProbe(pkt *packet.Packet) (netip.AddrPort, error) {
 		hdr.Encode(pkt)
 
 		for _, e := range c.proxyers {
+			println("route probe send", hdr.Server.String(), "proxyer", e.String())
+
 			_, err := c.conn.WriteToUDPAddrPort(pkt.Bytes(), e)
-			return netip.AddrPort{}, err
+			if err != nil {
+				return netip.AddrPort{}, err
+			}
 		}
 		return netip.AddrPort{}, nil
 	}
@@ -333,7 +337,10 @@ func (c *Client) injectServic() (_ error) {
 
 func (c *Client) handleMsg(msg msg) {
 	if msg.header.Kind == proto.RouteProbe {
-		c.route.Add(msg.header.Server, msg.proxyer)
+		ok := c.route.Add(msg.header.Server, msg.proxyer)
+		if ok {
+			println("route probe recv", msg.header.Server.String(), msg.proxyer.String())
+		}
 		return
 	}
 
