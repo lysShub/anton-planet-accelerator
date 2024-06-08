@@ -270,7 +270,6 @@ func (c *Client) routeProbe(pkt *packet.Packet) (netip.AddrPort, error) {
 	default:
 		var hdr proto.Header
 		hdr.Decode(pkt)
-		hdr.Kind = proto.RouteProbe
 		hdr.ID = 0
 		hdr.Encode(pkt)
 
@@ -311,7 +310,9 @@ func (c *Client) injectServic() (_ error) {
 				proxyer: paddr, header: *hdr,
 				data: slices.Clone(pkt.Bytes()),
 			})
-			continue
+		}
+		if c.route.Add(hdr.Server, paddr) {
+			println("route probe recv", hdr.Server.String(), paddr.String())
 		}
 
 		ip := header.IPv4(pkt.AttachN(header.IPv4MinimumSize).Bytes())
@@ -336,14 +337,6 @@ func (c *Client) injectServic() (_ error) {
 }
 
 func (c *Client) handleMsg(msg msg) {
-	if msg.header.Kind == proto.RouteProbe {
-		ok := c.route.Add(msg.header.Server, msg.proxyer)
-		if ok {
-			println("route probe recv", msg.header.Server.String(), msg.proxyer.String())
-		}
-		return
-	}
-
 	select {
 	case c.msgRecver <- msg:
 	default:
