@@ -19,6 +19,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/bpf"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -104,7 +106,14 @@ func (r *Link) Recv(pkt *packet.Packet) error {
 func (r *Link) Send(pkt *packet.Packet) error {
 	nodes.ChecksumForward(pkt, r.link.header.Proto, r.laddr)
 	if debug.Debug() {
-		// todo
+		sum := header.PseudoHeaderChecksum(
+			tcpip.TransportProtocolNumber(r.link.header.Proto),
+			tcpip.AddrFrom4(r.laddr.Addr().As4()),
+			tcpip.AddrFrom4(netip.MustParseAddr(r.raw.RemoteAddr().String()).As4()),
+			uint16(pkt.Data()),
+		)
+		sum = checksum.Checksum(pkt.Bytes(), sum)
+		require.Equal(test.T(), uint16(0xffff), sum)
 	}
 
 	r.count.Add(1)

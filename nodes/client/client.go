@@ -252,7 +252,7 @@ func (c *Client) captureService() (_ error) {
 			if err != nil {
 				return c.close(err)
 			} else if !next.IsValid() {
-				continue // drop this packet
+				continue // drop this packet, wait route probe
 			}
 		}
 		if _, err = c.conn.WriteToUDPAddrPort(ip.Bytes(), next); err != nil {
@@ -273,8 +273,8 @@ func (c *Client) routeProbe(pkt *packet.Packet) (netip.AddrPort, error) {
 		hdr.ID = 0
 		hdr.Encode(pkt)
 
+		println("send", hdr.String())
 		for _, e := range c.proxyers {
-			println("route probe send", hdr.Server.String(), "proxyer", e.String())
 
 			_, err := c.conn.WriteToUDPAddrPort(pkt.Bytes(), e)
 			if err != nil {
@@ -310,9 +310,10 @@ func (c *Client) injectServic() (_ error) {
 				proxyer: paddr, header: *hdr,
 				data: slices.Clone(pkt.Bytes()),
 			})
+			continue
 		}
 		if c.route.Add(hdr.Server, paddr) {
-			println("route probe recv", hdr.Server.String(), paddr.String())
+			println("recv", hdr.String())
 		}
 
 		ip := header.IPv4(pkt.AttachN(header.IPv4MinimumSize).Bytes())

@@ -166,7 +166,7 @@ func (f *Forward) addLink(link link, paddr netip.AddrPort) (*Link, error) {
 	return raw, nil
 }
 
-const durtion = time.Second * 30
+const durtion = time.Minute
 
 func (f *Forward) delLink(link link) error {
 	f.linkMu.RLock()
