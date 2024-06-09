@@ -26,7 +26,7 @@ var (
 func TestXxxx(t *testing.T) {
 	divert.MustLoad(divert.DLL)
 
-	// accelerator.Warthunder = "curl.exe"
+	// accelerator.Warthunder = "chrome.exe"
 
 	fmt.Println(debug.Debug(), accelerator.Warthunder)
 
@@ -39,7 +39,6 @@ func TestXxxx(t *testing.T) {
 
 	proxyers := []netip.AddrPort{
 		netip.MustParseAddrPort("8.137.91.200:19986"),
-		netip.MustParseAddrPort("8.137.91.200:19987"),
 	}
 
 	c, err := client.New(proxyers, config)

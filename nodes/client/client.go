@@ -216,6 +216,9 @@ func (c *Client) captureService() (_ error) {
 			name, err := c.mapping.Name(s.Src, uint8(s.Proto))
 			if err != nil {
 				if errorx.Temporary(err) {
+					if debug.Debug() {
+						c.config.logger.Warn("not mapping", slog.String("session", s.String()))
+					}
 					pass = true // todo: logger
 				} else {
 					return c.close(err)
@@ -252,9 +255,15 @@ func (c *Client) captureService() (_ error) {
 			if err != nil {
 				return c.close(err)
 			} else if !next.IsValid() {
+				println("drop", hdr.String())
 				continue // drop this packet, wait route probe
 			}
 		}
+
+		if ip.Data()+20+8 > 1500 {
+			println("too-big", ip.Data(), hdr.String())
+		}
+
 		if _, err = c.conn.WriteToUDPAddrPort(ip.Bytes(), next); err != nil {
 			return c.close(err)
 		}
