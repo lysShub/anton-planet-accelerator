@@ -45,6 +45,30 @@ func ChecksumClient(pkt *packet.Packet, proto tcpip.TransportProtocolNumber, dst
 	t.SetSourcePort(srcPort)
 }
 
+func ValidChecksum(pkt *packet.Packet, proto uint8, dst netip.Addr) bool {
+	var t header.Transport
+	switch tcpip.TransportProtocolNumber(proto) {
+	case header.TCPProtocolNumber:
+		t = header.TCP(pkt.Bytes())
+	case header.UDPProtocolNumber:
+		t = header.UDP(pkt.Bytes())
+	default:
+		panic(fmt.Sprintf("not support protocole %d", proto))
+	}
+	srcPort := t.SourcePort()
+	defer t.SetSourcePort(srcPort)
+
+	sum := header.PseudoHeaderChecksum(
+		tcpip.TransportProtocolNumber(proto),
+		ip4zero,
+		tcpip.AddrFrom4(dst.As4()),
+		uint16(pkt.Data()),
+	)
+	t.SetSourcePort(0)
+	sum = checksum.Checksum(pkt.Bytes(), sum)
+	return sum == 0xffff
+}
+
 var ip4zero = tcpip.AddrFrom4([4]byte{})
 
 func ChecksumForward(pkt *packet.Packet, proto uint8, loc netip.AddrPort) {

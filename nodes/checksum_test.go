@@ -9,6 +9,7 @@ import (
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/rawsock/test"
+	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -34,6 +35,10 @@ func Test_Checksum(t *testing.T) {
 	})
 
 	nodes.ChecksumClient(pkt, header.TCPProtocolNumber, server.Addr())
+
+	ok := nodes.ValidChecksum(pkt, 17, server.Addr())
+	require.True(t, ok)
+
 	nodes.ChecksumForward(pkt, syscall.IPPROTO_TCP, local)
 
 	test.ValidTCP(t, pkt.Bytes(), header.PseudoHeaderChecksum(

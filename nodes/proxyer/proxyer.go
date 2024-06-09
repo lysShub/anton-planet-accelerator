@@ -8,11 +8,14 @@ import (
 	"net"
 	"net/netip"
 
+	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 )
 
 type Proxyer struct {
@@ -90,6 +93,10 @@ func (p *Proxyer) uplinkService() (_ error) {
 		if err := hdr.Decode(pkt); err != nil {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
+		}
+		if debug.Debug() {
+			ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
+			require.True(test.T(), ok)
 		}
 		hdr.Client = caddr
 		if err := hdr.Encode(pkt); err != nil {

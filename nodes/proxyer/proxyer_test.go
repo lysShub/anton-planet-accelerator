@@ -30,3 +30,19 @@ func TestXxxx(t *testing.T) {
 	err = p.Serve()
 	require.NoError(t, err)
 }
+
+func TestXxxx2(t *testing.T) {
+	fmt.Println(debug.Debug())
+
+	config := proxyer.Config{
+		MaxRecvBuff: 1536,
+	}
+
+	forward := netip.MustParseAddrPort("8.222.83.62:19986")
+
+	p, err := proxyer.New(":19987", forward, &config)
+	require.NoError(t, err)
+
+	err = p.Serve()
+	require.NoError(t, err)
+}
