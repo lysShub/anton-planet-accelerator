@@ -84,7 +84,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 	)
 
 	for {
-		n, caddr, err := p.conn.ReadFromUDPAddrPort(pkt.Sets(64, 0xffff).Bytes())
+		n, caddr, err := p.conn.ReadFromUDPAddrPort(pkt.Sets(0, 0xffff).Bytes())
 		if err != nil {
 			return p.close(err)
 		}
@@ -126,7 +126,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 	)
 
 	for {
-		n, _, err := p.sender.ReadFromUDPAddrPort(pkt.Sets(64, 0xffff).Bytes())
+		n, _, err := p.sender.ReadFromUDPAddrPort(pkt.Sets(0, 0xffff).Bytes())
 		if err != nil {
 			return p.close(err)
 		}
