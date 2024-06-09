@@ -94,7 +94,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
-		if debug.Debug() {
+		if debug.Debug() && hdr.Kind == proto.Data {
 			ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
 			require.True(test.T(), ok)
 		}

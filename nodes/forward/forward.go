@@ -114,10 +114,6 @@ func (f *Forward) recvService() (err error) {
 			f.config.logger.Error(err.Error(), errorx.Trace(err))
 			continue
 		}
-		if debug.Debug() {
-			ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
-			require.True(test.T(), ok)
-		}
 		stats := f.statsRecv(hdr.Client, hdr.ID)
 
 		switch hdr.Kind {
@@ -133,6 +129,11 @@ func (f *Forward) recvService() (err error) {
 				return f.close(err)
 			}
 		case proto.Data:
+			if debug.Debug() {
+				ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
+				require.True(test.T(), ok)
+			}
+
 			t := header.TCP(pkt.Bytes()) // only get port, tcp/udp is same
 			link := link{header: hdr, processPort: t.SourcePort(), serverPort: t.DestinationPort()}
 			link.header.ID = 0
