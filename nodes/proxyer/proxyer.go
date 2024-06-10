@@ -34,6 +34,7 @@ func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) 
 		config:  config.init(),
 		forward: forward,
 	}
+	nodes.DisableOffload(config.logger)
 
 	laddr, err := net.ResolveUDPAddr("udp4", addr)
 	if err != nil {

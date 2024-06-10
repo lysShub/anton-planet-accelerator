@@ -255,8 +255,7 @@ func (c *Client) captureService() (_ error) {
 			if err != nil {
 				return c.close(err)
 			} else if !next.IsValid() {
-				println("drop", hdr.String())
-				continue // drop this packet, wait route probe
+				next = c.route.ActiveProxyer()
 			}
 		}
 
@@ -282,7 +281,6 @@ func (c *Client) routeProbe(pkt *packet.Packet) (netip.AddrPort, error) {
 		hdr.ID = 0
 		hdr.Encode(pkt)
 
-		println("send", hdr.String())
 		for _, e := range c.proxyers {
 
 			_, err := c.conn.WriteToUDPAddrPort(pkt.Bytes(), e)
@@ -323,6 +321,9 @@ func (c *Client) injectServic() (_ error) {
 		}
 		if c.route.Add(hdr.Server, paddr) {
 			println("recv", hdr.String())
+		}
+		if hdr.Proto == uint8(header.TCPProtocolNumber) {
+			fatun.UpdateTcpMssOption(pkt.Bytes(), c.config.TcpMssDelta)
 		}
 
 		ip := header.IPv4(pkt.AttachN(header.IPv4MinimumSize).Bytes())
