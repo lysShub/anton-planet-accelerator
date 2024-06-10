@@ -21,10 +21,17 @@ func DisableOffload(logger *slog.Logger) {
 	var keys = []string{"tso", "gso", "gro", "lro", "rx-gro-hw"}
 
 	for _, key := range keys {
-		cmd := exec.Command("ethtook", "-K", eth0, key, "off")
+		cmd := exec.Command("ethtool", "-K", eth0, key, "off")
 		out, err := cmd.CombinedOutput()
 		if cmd.ProcessState.ExitCode() != 0 || err != nil {
-			logger.Error("disable offload", slog.String("command", cmd.String()), slog.String("output", string(out)))
+			var attrs = []slog.Attr{slog.String("command", cmd.String())}
+			if len(out) > 0 {
+				attrs = append(attrs, slog.String("output", string(out)))
+			}
+			if err != nil {
+				attrs = append(attrs, slog.String("error", err.Error()))
+			}
+			logger.Error("disable offload", attrs)
 		}
 	}
 }
