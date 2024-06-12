@@ -62,7 +62,10 @@ func New(addr string, config *Config) (*Forward, error) {
 		connStats: map[netip.AddrPort]*stats{},
 		links:     map[link]*Link{},
 	}
-	nodes.DisableOffload(config.logger)
+	err := nodes.DisableOffload(config.logger)
+	if err != nil {
+		return nil, err
+	}
 
 	laddr, err := net.ResolveUDPAddr("udp4", addr)
 	if err != nil {
