@@ -41,6 +41,8 @@ func (r *route) Add(server netip.Addr, proxyer netip.AddrPort) bool {
 		r.mu.Lock()
 		r.cache[server] = proxyer
 		r.mu.Unlock()
+
+		// println("route", server.String(), proxyer.String())
 	}
 	return !has
 }

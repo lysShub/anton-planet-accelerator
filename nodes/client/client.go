@@ -42,11 +42,9 @@ type Client struct {
 	id   atomic.Uint32
 	pl   *nodes.PLStats
 
-	proxyers []netip.AddrPort
-	// routeMu        sync.RWMutex
-	// route     map[netip.Addr]netip.AddrPort // server-addr:proxyer-addr
-	// currentProxyer netip.AddrPort
-	route *route
+	proxyers        []netip.AddrPort
+	routeProbeCache map[netip.Addr]int8 // 有的数据包只有上行，避免这种数据包一直被route probe
+	route           *route
 
 	msgRecver chan msg
 
@@ -63,11 +61,12 @@ type msg struct {
 
 func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
 	var c = &Client{
-		config:    config.init(),
-		pl:        &nodes.PLStats{},
-		proxyers:  proxyers,
-		route:     NewRoute(proxyers[0]),
-		msgRecver: make(chan msg, 8),
+		config:          config.init(),
+		pl:              &nodes.PLStats{},
+		proxyers:        proxyers,
+		routeProbeCache: map[netip.Addr]int8{},
+		route:           NewRoute(proxyers[0]),
+		msgRecver:       make(chan msg, 8),
 	}
 	var err error
 
@@ -144,9 +143,9 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 	} {
 		var pkt = packet.Make(proto.HeaderSize)
 		var hdr = proto.Header{
-			Kind:   kind,
-			Proto:  syscall.IPPROTO_TCP,
-			ID:     uint8(c.id.Add(1)),
+			Kind:  kind,
+			Proto: syscall.IPPROTO_TCP,
+			// ID:     uint8(c.id.Add(1)),
 			Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0),
 			Server: netip.IPv4Unspecified(),
 		}
@@ -219,7 +218,7 @@ func (c *Client) captureService() (_ error) {
 					if debug.Debug() {
 						c.config.logger.Warn("not mapping", slog.String("session", s.String()))
 					}
-					pass = true // todo: logger
+					pass = false
 				} else {
 					return c.close(err)
 				}
@@ -255,7 +254,7 @@ func (c *Client) captureService() (_ error) {
 			if err != nil {
 				return c.close(err)
 			} else if !next.IsValid() {
-				next = c.route.ActiveProxyer()
+				continue
 			}
 		}
 
@@ -279,9 +278,18 @@ func (c *Client) routeProbe(pkt *packet.Packet) (netip.AddrPort, error) {
 		var hdr proto.Header
 		hdr.Decode(pkt)
 		hdr.ID = 0
+		dstPort := header.TCP(pkt.Bytes()).DestinationPort()
 		hdr.Encode(pkt)
 
+		if c.routeProbeCache[hdr.Server] > 3 {
+			// println("drop probe")
+			return netip.AddrPort{}, nil
+		}
+		c.routeProbeCache[hdr.Server]++
+
 		for _, e := range c.proxyers {
+
+			println("send probe", hdr.Server.String(), hdr.Proto, dstPort, e.String())
 
 			_, err := c.conn.WriteToUDPAddrPort(pkt.Bytes(), e)
 			if err != nil {
@@ -291,6 +299,13 @@ func (c *Client) routeProbe(pkt *packet.Packet) (netip.AddrPort, error) {
 		return netip.AddrPort{}, nil
 	}
 }
+
+type eee struct {
+	server  netip.Addr
+	proxyer netip.AddrPort
+}
+
+var maps = map[eee]bool{}
 
 func (c *Client) injectServic() (_ error) {
 	var (
@@ -319,8 +334,16 @@ func (c *Client) injectServic() (_ error) {
 			})
 			continue
 		}
+		{
+			e := eee{server: hdr.Server, proxyer: paddr}
+			if !maps[e] {
+				maps[e] = true
+				dstPort := header.TCP(pkt.Bytes()).DestinationPort()
+				println("recv probe", e.server.String(), dstPort, hdr.Proto, e.proxyer.String())
+			}
+		}
 		if c.route.Add(hdr.Server, paddr) {
-			println("recv", hdr.String())
+			// c.config.logger.Info("route probe", slog.String("server", hdr.Server.String()), slog.String("proxyer", paddr.String()))
 		}
 		if hdr.Proto == uint8(header.TCPProtocolNumber) {
 			fatun.UpdateTcpMssOption(pkt.Bytes(), c.config.TcpMssDelta)
