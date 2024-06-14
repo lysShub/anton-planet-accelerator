@@ -5,7 +5,6 @@ package client
 
 import (
 	"log/slog"
-	"net"
 	"net/netip"
 	"os"
 	"slices"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	accelerator "github.com/lysShub/anton-planet-accelerator"
+	"github.com/lysShub/anton-planet-accelerator/conn"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	proto "github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/divert-go"
@@ -23,7 +23,6 @@ import (
 	mapping "github.com/lysShub/netkit/mapping/process"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/netkit/pcap"
-	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -38,7 +37,7 @@ type Client struct {
 	capture *divert.Handle
 	inbound divert.Address
 
-	conn *net.UDPConn
+	conn conn.Conn
 	id   atomic.Uint32
 	pl   *nodes.PLStats
 
@@ -70,11 +69,11 @@ func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
 	}
 	var err error
 
-	c.conn, err = net.ListenUDP("udp4", nil)
+	c.conn, err = conn.Listen(nodes.Network, netip.AddrPortFrom(netip.IPv4Unspecified(), 0))
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-	c.laddr = netip.AddrPortFrom(test.LocIP(), uint16(c.conn.LocalAddr().(*net.UDPAddr).Port))
+	c.laddr = c.conn.LocalAddr()
 
 	if c.mapping, err = mapping.New(); err != nil {
 		return nil, c.close(err)
@@ -152,7 +151,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 		if err := hdr.Encode(pkt); err != nil {
 			return nil, c.close(err)
 		}
-		if _, err := c.conn.WriteToUDPAddrPort(pkt.Bytes(), c.route.ActiveProxyer()); err != nil {
+		if err := c.conn.WriteToAddrPort(pkt, c.route.ActiveProxyer()); err != nil {
 			return nil, c.close(err)
 		}
 	}
@@ -262,7 +261,7 @@ func (c *Client) captureService() (_ error) {
 			println("too-big", ip.Data(), hdr.String())
 		}
 
-		if _, err = c.conn.WriteToUDPAddrPort(ip.Bytes(), next); err != nil {
+		if err = c.conn.WriteToAddrPort(ip, next); err != nil {
 			return c.close(err)
 		}
 	}
@@ -291,7 +290,7 @@ func (c *Client) routeProbe(pkt *packet.Packet) (netip.AddrPort, error) {
 
 			println("send probe", hdr.Server.String(), hdr.Proto, dstPort, e.String())
 
-			_, err := c.conn.WriteToUDPAddrPort(pkt.Bytes(), e)
+			err := c.conn.WriteToAddrPort(pkt, e)
 			if err != nil {
 				return netip.AddrPort{}, err
 			}
@@ -315,11 +314,10 @@ func (c *Client) injectServic() (_ error) {
 	)
 
 	for {
-		n, paddr, err := c.conn.ReadFromUDPAddrPort(pkt.Sets(64, 0xffff).Bytes())
+		paddr, err := c.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
 		if err != nil {
 			return c.close(err)
 		}
-		pkt.SetData(n)
 
 		if err := hdr.Decode(pkt); err != nil {
 			c.config.logger.Error(err.Error(), errorx.Trace(err))

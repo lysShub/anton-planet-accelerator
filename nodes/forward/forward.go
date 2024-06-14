@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lysShub/anton-planet-accelerator/conn"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
@@ -26,7 +27,7 @@ import (
 type Forward struct {
 	config *Config
 
-	conn *net.UDPConn
+	conn conn.Conn
 
 	connStatsMu sync.RWMutex
 	connStats   map[netip.AddrPort]*stats
@@ -67,13 +68,23 @@ func New(addr string, config *Config) (*Forward, error) {
 		return nil, err
 	}
 
-	laddr, err := net.ResolveUDPAddr("udp4", addr)
+	laddr, err := func() (netip.AddrPort, error) {
+		addr, err := net.ResolveUDPAddr(nodes.Network, addr)
+		if err != nil {
+			return netip.AddrPort{}, errors.WithStack(err)
+		}
+		return netip.AddrPortFrom(
+			netip.AddrFrom4([4]byte(addr.IP.To4())),
+			uint16(addr.Port),
+		), nil
+	}()
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, f.close(err)
 	}
-	f.conn, err = net.ListenUDP("udp4", laddr)
+
+	f.conn, err = conn.Listen(nodes.Network, laddr)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, f.close(err)
 	}
 	return f, nil
 }
@@ -108,11 +119,10 @@ func (f *Forward) recvService() (err error) {
 	)
 
 	for {
-		n, paddr, err := f.conn.ReadFromUDPAddrPort(pkt.Sets(head, 0xffff).Bytes())
+		paddr, err := f.conn.ReadFromAddrPort(pkt.Sets(head, 0xffff))
 		if err != nil {
 			return f.close(err)
 		}
-		pkt.SetData(n)
 
 		if err := hdr.Decode(pkt); err != nil {
 			f.config.logger.Error(err.Error(), errorx.Trace(err))
@@ -122,13 +132,13 @@ func (f *Forward) recvService() (err error) {
 
 		switch hdr.Kind {
 		case proto.PingForward:
-			_, err := f.conn.WriteToUDPAddrPort(pkt.SetHead(head).Bytes(), paddr)
+			err := f.conn.WriteToAddrPort(pkt.SetHead(head), paddr)
 			if err != nil {
 				return f.close(err)
 			}
 		case proto.PackLossUplink:
 			pkt.SetHead(head).Append(proto.PL(stats.pl.PL()).Encode()...)
-			_, err = f.conn.WriteToUDPAddrPort(pkt.Bytes(), paddr)
+			err = f.conn.WriteToAddrPort(pkt, paddr)
 			if err != nil {
 				return f.close(err)
 			}
@@ -236,7 +246,7 @@ func (f *Forward) sendService(raw *Link) (_ error) {
 			continue
 		}
 
-		_, err := f.conn.WriteToUDPAddrPort(pkt.Bytes(), raw.Proxyer())
+		err := f.conn.WriteToAddrPort(pkt, raw.Proxyer())
 		if err != nil {
 			return f.close(err)
 		}

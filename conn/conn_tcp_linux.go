@@ -137,7 +137,9 @@ func (c *tcpConn) WriteToAddrPort(b *packet.Packet, to netip.AddrPort) (err erro
 	return nil
 }
 
-func (c *tcpConn) Close() error { return c.close(nil) }
+func (c *tcpConn) Close() error               { return c.close(nil) }
+func (c *tcpConn) LocalAddr() netip.AddrPort  { return c.laddr }
+func (c *tcpConn) RemoteAddr() netip.AddrPort { return c.raddr }
 
 // listenTcpLocal avoid system tcp stack replay RST
 func listenTcpLocal(laddr netip.AddrPort) (*net.TCPListener, netip.AddrPort, error) {

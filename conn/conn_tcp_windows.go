@@ -51,13 +51,6 @@ func dialTCP(laddr, raddr netip.AddrPort) (Conn, error) {
 	}
 	c.outbound = divert.Address{}
 	c.outbound.SetOutbound(true)
-	c.outbound.Network().IfIdx = func() uint32 {
-		ifi, ok := addr2if.Load(laddr.Addr())
-		if !ok {
-			panic("")
-		}
-		return ifi.(uint32)
-	}()
 
 	return c, nil
 }
@@ -147,7 +140,9 @@ func (c *tcpConn) writeTo(b *packet.Packet, to netip.AddrPort) error {
 	return err
 }
 
-func (c *tcpConn) Close() error { return c.close(nil) }
+func (c *tcpConn) Close() error               { return c.close(nil) }
+func (c *tcpConn) LocalAddr() netip.AddrPort  { return c.laddr }
+func (c *tcpConn) RemoteAddr() netip.AddrPort { return c.raddr }
 
 func bindLocal(laddr netip.AddrPort) (windows.Handle, netip.AddrPort, error) {
 	var (

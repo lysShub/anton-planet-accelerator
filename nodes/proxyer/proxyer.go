@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 
+	"github.com/lysShub/anton-planet-accelerator/conn"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
@@ -22,9 +23,9 @@ type Proxyer struct {
 	config  *Config
 	forward netip.AddrPort
 
-	conn *net.UDPConn
+	conn conn.Conn
 
-	sender *net.UDPConn
+	sender conn.Conn
 
 	closeErr errorx.CloseErr
 }
@@ -39,16 +40,26 @@ func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) 
 		return nil, err
 	}
 
-	laddr, err := net.ResolveUDPAddr("udp4", addr)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	p.conn, err = net.ListenUDP("udp4", laddr)
+	laddr, err := func() (netip.AddrPort, error) {
+		addr, err := net.ResolveUDPAddr(nodes.Network, addr)
+		if err != nil {
+			return netip.AddrPort{}, errors.WithStack(err)
+		}
+		return netip.AddrPortFrom(
+			netip.AddrFrom4([4]byte(addr.IP.To4())),
+			uint16(addr.Port),
+		), nil
+	}()
 	if err != nil {
 		return nil, p.close(err)
 	}
 
-	p.sender, err = net.ListenUDP("udp4", nil)
+	p.conn, err = conn.Listen(nodes.Network, laddr)
+	if err != nil {
+		return nil, p.close(err)
+	}
+
+	p.sender, err = conn.Listen(nodes.Network, netip.AddrPortFrom(laddr.Addr(), 0))
 	if err != nil {
 		return nil, p.close(err)
 	}
@@ -88,11 +99,10 @@ func (p *Proxyer) uplinkService() (_ error) {
 	)
 
 	for {
-		n, caddr, err := p.conn.ReadFromUDPAddrPort(pkt.Sets(0, 0xffff).Bytes())
+		caddr, err := p.conn.ReadFromAddrPort(pkt.Sets(0, 0xffff))
 		if err != nil {
 			return p.close(err)
 		}
-		pkt.SetData(n)
 
 		if err := hdr.Decode(pkt); err != nil {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
@@ -110,12 +120,12 @@ func (p *Proxyer) uplinkService() (_ error) {
 
 		switch hdr.Kind {
 		case proto.PingProxyer:
-			_, err = p.conn.WriteToUDPAddrPort(pkt.Bytes(), caddr)
+			err = p.conn.WriteToAddrPort(pkt, caddr)
 			if err != nil {
 				return p.close(err)
 			}
 		default:
-			_, err = p.sender.WriteToUDPAddrPort(pkt.Bytes(), p.forward)
+			err = p.sender.WriteToAddrPort(pkt, p.forward)
 			if err != nil {
 				return p.close(err)
 			}
@@ -130,11 +140,10 @@ func (p *Proxyer) donwlinkService() (_ error) {
 	)
 
 	for {
-		n, _, err := p.sender.ReadFromUDPAddrPort(pkt.Sets(0, 0xffff).Bytes())
+		_, err := p.sender.ReadFromAddrPort(pkt.Sets(0, 0xffff))
 		if err != nil {
 			return p.close(err)
 		}
-		pkt.SetData(n)
 
 		if err := hdr.Decode(pkt); err != nil {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
@@ -142,7 +151,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 		}
 		pkt.AttachN(proto.HeaderSize)
 
-		_, err = p.conn.WriteToUDPAddrPort(pkt.Bytes(), hdr.Client)
+		err = p.conn.WriteToAddrPort(pkt, hdr.Client)
 		if err != nil {
 			return p.close(err)
 		}

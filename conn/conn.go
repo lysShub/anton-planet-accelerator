@@ -2,7 +2,6 @@ package conn
 
 import (
 	"net/netip"
-	"sync"
 	"syscall"
 
 	"github.com/lysShub/netkit/packet"
@@ -17,6 +16,9 @@ type Conn interface {
 
 	ReadFromAddrPort(*packet.Packet) (netip.AddrPort, error)
 	WriteToAddrPort(*packet.Packet, netip.AddrPort) error
+
+	LocalAddr() netip.AddrPort
+	RemoteAddr() netip.AddrPort
 
 	Close() error
 }
@@ -93,9 +95,5 @@ func defaultLocal(laddr, raddr netip.Addr) (netip.Addr, error) {
 			return netip.Addr{}, errors.WithStack(err)
 		}
 	}
-
-	addr2if.Store(laddr, entry.Interface)
 	return laddr, nil
 }
-
-var addr2if = sync.Map{}

@@ -37,7 +37,7 @@ func (c *Config) init() *Config {
 
 // todo: optimzie
 func defaultAdapter() (*net.Interface, error) {
-	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.IP{8, 8, 8, 8}, Port: 53})
+	conn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.IP{8, 8, 8, 8}, Port: 53})
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

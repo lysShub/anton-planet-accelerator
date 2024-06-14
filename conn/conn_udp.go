@@ -65,3 +65,13 @@ func (c *udpConn) WriteToAddrPort(b *packet.Packet, dst netip.AddrPort) error {
 	return err
 }
 func (c *udpConn) Close() error { return c.conn.Close() }
+func (c *udpConn) LocalAddr() netip.AddrPort {
+	return netip.MustParseAddrPort(c.conn.LocalAddr().String())
+}
+func (c *udpConn) RemoteAddr() netip.AddrPort {
+	addr := c.conn.RemoteAddr()
+	if addr != nil {
+		return netip.MustParseAddrPort(addr.String())
+	}
+	return netip.AddrPort{}
+}
