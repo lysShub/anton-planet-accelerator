@@ -57,11 +57,11 @@ func listenTCP(laddr netip.AddrPort) (Conn, error) {
 		return nil, c.close(err)
 	}
 
-	c.raw, err = net.DialIP("ip4:tcp", &net.IPAddr{IP: c.laddr.Addr().AsSlice()}, &net.IPAddr{IP: c.raddr.Addr().AsSlice()})
+	c.raw, err = net.ListenIP("ip4:tcp", &net.IPAddr{IP: c.laddr.Addr().AsSlice()})
 	if err != nil {
 		return nil, c.close(errors.WithStack(err))
 	}
-	err = SetRawBPF(c.raw, FilterPorts(c.laddr.Port(), 0))
+	err = SetRawBPF(c.raw, FilterPorts(0, c.laddr.Port()))
 	if err != nil {
 		return nil, c.close(err)
 	}

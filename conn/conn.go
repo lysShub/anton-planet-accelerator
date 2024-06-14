@@ -47,7 +47,7 @@ func Listen(network string, laddr netip.AddrPort) (Conn, error) {
 	if !laddr.Addr().Is4() {
 		return nil, errors.Errorf("only support ipv4 %s", laddr.String())
 	}
-	if laddr.IsValid() {
+	if laddr.Addr().IsUnspecified() {
 		locAddr, err := defaultLocal(laddr.Addr(), netip.AddrFrom4([4]byte{8, 8, 8, 8}))
 		if err != nil {
 			return nil, err

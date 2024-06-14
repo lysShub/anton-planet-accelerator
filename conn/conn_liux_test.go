@@ -4,6 +4,7 @@
 package conn
 
 import (
+	"fmt"
 	"net/netip"
 	"testing"
 
@@ -21,6 +22,11 @@ func TestServer(t *testing.T) {
 		raddr, err := conn.ReadFromAddrPort(b.Sets(0, 0xfff))
 		require.NoError(t, err)
 
+		fmt.Println("收到", raddr.String())
+
+		if b.Data() == 0 {
+			continue
+		}
 		err = conn.WriteToAddrPort(b, raddr)
 		require.NoError(t, err)
 	}
