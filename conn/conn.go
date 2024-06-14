@@ -1,8 +1,8 @@
 package conn
 
 import (
+	"net"
 	"net/netip"
-	"syscall"
 
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/netkit/route"
@@ -23,77 +23,77 @@ type Conn interface {
 	Close() error
 }
 
-func Dial(network string, laddr, raddr netip.AddrPort) (Conn, error) {
-	if !laddr.Addr().Is4() || !raddr.Addr().Is4() {
-		return nil, errors.Errorf("only support ipv4 %s-->%s", laddr.String(), raddr.String())
-	}
-	if laddr.IsValid() {
-		locAddr, err := defaultLocal(laddr.Addr(), raddr.Addr())
-		if err != nil {
-			return nil, err
-		}
-		laddr = netip.AddrPortFrom(locAddr, laddr.Port())
-	}
-
-	switch network {
-	case "udp", "udp4":
-		return dialUDP(laddr, raddr)
-	case "tcp", "tcp4":
-		return dialTCP(laddr, raddr)
-	default:
-		return nil, errors.Errorf("not support network %s", network)
-	}
-}
-
-func Listen(network string, laddr netip.AddrPort) (Conn, error) {
-	if !laddr.Addr().Is4() {
-		return nil, errors.Errorf("only support ipv4 %s", laddr.String())
-	}
-	if laddr.Addr().IsUnspecified() {
-		locAddr, err := defaultLocal(laddr.Addr(), netip.AddrFrom4([4]byte{8, 8, 8, 8}))
-		if err != nil {
-			return nil, err
-		}
-		laddr = netip.AddrPortFrom(locAddr, laddr.Port())
-	}
-
-	switch network {
-	case "udp", "udp4":
-		return listenUDP(laddr)
-	case "tcp", "tcp4":
-		return listenTCP(laddr)
-	default:
-		return nil, errors.Errorf("not support network %s", network)
-	}
-}
-
-func defaultLocal(laddr, raddr netip.Addr) (netip.Addr, error) {
-	if !laddr.IsUnspecified() {
-		return laddr, nil
-	}
-
-	table, err := route.GetTable()
+func Dial(network string, laddr, raddr string) (Conn, error) {
+	remAddr, err := resolveAddr(raddr)
 	if err != nil {
-		return netip.Addr{}, errors.WithStack(err)
+		return nil, err
+	} else if remAddr.Addr().IsUnspecified() || remAddr.Port() == 0 {
+		return nil, errors.Errorf("unknown remote address %s", remAddr.String())
 	}
-	entry := table.Match(raddr)
-	if !entry.Valid() {
-		err = errors.WithMessagef(
-			syscall.ENETUNREACH,
-			"%s -> %s", laddr.String(), raddr.String(),
-		)
-		return netip.Addr{}, errors.WithStack(err)
+	locAddr, err := resolveAddr(laddr)
+	if err != nil {
+		return nil, err
+	} else if locAddr.Addr().IsUnspecified() {
+		table, err := route.GetTable()
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		entry := table.Match(netip.AddrFrom4(remAddr.Addr().As4()))
+		if !entry.Valid() {
+			return nil, errors.Errorf("network %s is unreachable", remAddr.Addr().String())
+		}
+		locAddr = netip.AddrPortFrom(entry.Addr, locAddr.Port())
 	}
 
-	if laddr.IsUnspecified() {
-		laddr = entry.Addr
-	} else {
-		if laddr != entry.Addr {
-			err = errors.WithMessagef(
-				syscall.EADDRNOTAVAIL, laddr.String(),
-			)
-			return netip.Addr{}, errors.WithStack(err)
-		}
+	switch network {
+	case "udp", "udp4":
+		return dialUDP(locAddr, remAddr)
+	case "tcp", "tcp4":
+		return dialTCP(locAddr, remAddr)
+	default:
+		return nil, errors.Errorf("not support network %s", network)
 	}
-	return laddr, nil
+}
+
+func Listen(network string, laddr string) (Conn, error) {
+	addr, err := resolveAddr(laddr)
+	if err != nil {
+		return nil, err
+	}
+	if addr.Addr().IsUnspecified() {
+		table, err := route.GetTable()
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		entry := table.Match(netip.AddrFrom4([4]byte{8, 8, 8, 8}))
+		if !entry.Valid() {
+			return nil, errors.New("not network connection")
+		}
+		addr = netip.AddrPortFrom(entry.Addr, addr.Port())
+	}
+
+	switch network {
+	case "udp", "udp4":
+		return listenUDP(addr)
+	case "tcp", "tcp4":
+		return listenTCP(addr)
+	default:
+		return nil, errors.Errorf("not support network %s", network)
+	}
+}
+
+func resolveAddr(addr string) (netip.AddrPort, error) {
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return netip.AddrPort{}, errors.WithStack(err)
+	}
+	if len(udpAddr.IP) == 0 {
+		udpAddr.IP = netip.IPv4Unspecified().AsSlice()
+	}
+
+	a := udpAddr.AddrPort()
+	if !a.Addr().Is4() {
+		return netip.AddrPort{}, errors.Errorf("only support ipv4 %s", udpAddr.String())
+	}
+	return a, nil
 }

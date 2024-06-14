@@ -6,7 +6,6 @@ package forward
 import (
 	"fmt"
 	"log/slog"
-	"net"
 	"net/netip"
 	"sync"
 	"sync/atomic"
@@ -19,7 +18,6 @@ import (
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/rawsock/test"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -68,21 +66,7 @@ func New(addr string, config *Config) (*Forward, error) {
 		return nil, err
 	}
 
-	laddr, err := func() (netip.AddrPort, error) {
-		addr, err := net.ResolveUDPAddr(nodes.Network, addr)
-		if err != nil {
-			return netip.AddrPort{}, errors.WithStack(err)
-		}
-		return netip.AddrPortFrom(
-			netip.AddrFrom4([4]byte(addr.IP.To4())),
-			uint16(addr.Port),
-		), nil
-	}()
-	if err != nil {
-		return nil, f.close(err)
-	}
-
-	f.conn, err = conn.Listen(nodes.Network, laddr)
+	f.conn, err = conn.Listen(nodes.Network, addr)
 	if err != nil {
 		return nil, f.close(err)
 	}

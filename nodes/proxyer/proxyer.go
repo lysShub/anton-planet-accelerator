@@ -5,7 +5,6 @@ package proxyer
 
 import (
 	"log/slog"
-	"net"
 	"net/netip"
 
 	"github.com/lysShub/anton-planet-accelerator/conn"
@@ -40,26 +39,12 @@ func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) 
 		return nil, err
 	}
 
-	laddr, err := func() (netip.AddrPort, error) {
-		addr, err := net.ResolveUDPAddr(nodes.Network, addr)
-		if err != nil {
-			return netip.AddrPort{}, errors.WithStack(err)
-		}
-		return netip.AddrPortFrom(
-			netip.AddrFrom4([4]byte(addr.IP.To4())),
-			uint16(addr.Port),
-		), nil
-	}()
+	p.conn, err = conn.Listen(nodes.Network, addr)
 	if err != nil {
 		return nil, p.close(err)
 	}
 
-	p.conn, err = conn.Listen(nodes.Network, laddr)
-	if err != nil {
-		return nil, p.close(err)
-	}
-
-	p.sender, err = conn.Listen(nodes.Network, netip.AddrPortFrom(laddr.Addr(), 0))
+	p.sender, err = conn.Listen(nodes.Network, "")
 	if err != nil {
 		return nil, p.close(err)
 	}
