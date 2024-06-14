@@ -18,10 +18,9 @@ func TestClient(t *testing.T) {
 	defer conn.Close()
 
 	var b = packet.From([]byte("hello"))
-	// var b = packet.Make(64, 0, 0)
 	err = conn.Write(b)
 	require.NoError(t, err)
 
-	err = conn.Read(b)
+	err = conn.Read(b.Sets(0, 0xffff))
 	require.NoError(t, err)
 }

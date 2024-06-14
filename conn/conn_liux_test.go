@@ -41,6 +41,6 @@ func TestClient(t *testing.T) {
 	err = conn.Write(b)
 	require.NoError(t, err)
 
-	err = conn.Read(b)
+	err = conn.Read(b.Sets(0, 0xffff))
 	require.NoError(t, err)
 }

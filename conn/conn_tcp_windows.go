@@ -43,7 +43,7 @@ func dialTCP(laddr, raddr netip.AddrPort) (Conn, error) {
 
 	var filter = fmt.Sprintf(
 		"inbound and ip and tcp and localAddr=%s and localPort=%d and remoteAddr=%s and remotePort=%d",
-		laddr.Addr().String(), laddr.Port(), raddr.Addr().String(), raddr.Port(),
+		c.laddr.Addr().String(), c.laddr.Port(), c.raddr.Addr().String(), c.raddr.Port(),
 	)
 	c.handle, err = divert.Open(filter, divert.Network, 0, 0)
 	if err != nil {

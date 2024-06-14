@@ -40,7 +40,7 @@ func dialTCP(laddr, raddr netip.AddrPort) (Conn, error) {
 	if err != nil {
 		return nil, c.close(errors.WithStack(err))
 	}
-	err = SetRawBPF(c.raw, FilterPorts(c.laddr.Port(), c.raddr.Port()))
+	err = SetRawBPF(c.raw, FilterPorts(c.raddr.Port(), c.laddr.Port()))
 	if err != nil {
 		return nil, c.close(err)
 	}
