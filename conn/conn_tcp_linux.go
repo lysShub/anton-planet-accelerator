@@ -5,9 +5,11 @@ package conn
 
 import (
 	"encoding/hex"
+	"log/slog"
 	"net"
 	"net/netip"
 
+	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
@@ -94,6 +96,9 @@ func (c *tcpConn) ReadFromAddrPort(b *packet.Packet) (src netip.AddrPort, err er
 		return netip.AddrPort{}, err
 	} else if n < header.TCPMinimumSize {
 		return netip.AddrPort{}, errors.Errorf("invalid tcp packet %s", hex.EncodeToString(b.Bytes()))
+	}
+	if debug.Debug() && n == b.Data() {
+		slog.Warn("too short warning", errorx.Trace(nil))
 	}
 	b.SetData(n)
 

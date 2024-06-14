@@ -1,9 +1,12 @@
 package conn
 
 import (
+	"log/slog"
 	"net"
 	"net/netip"
 
+	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
 )
@@ -50,6 +53,9 @@ func (c *udpConn) ReadFromAddrPort(b *packet.Packet) (netip.AddrPort, error) {
 	n, addr, err := c.conn.ReadFromUDPAddrPort(b.Bytes())
 	if err != nil {
 		return netip.AddrPort{}, err
+	}
+	if debug.Debug() && n == b.Data() {
+		slog.Warn("too short warning", errorx.Trace(nil))
 	}
 	b.SetData(n)
 	return addr, nil
