@@ -9,6 +9,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
+// todo: state machine
 func attachTcpHdr(b *packet.Packet, src, dst netip.AddrPort) {
 	hdr := header.TCP(b.AttachN(header.TCPMinimumSize).Bytes())
 	hdr.Encode(&header.TCPFields{
@@ -17,8 +18,8 @@ func attachTcpHdr(b *packet.Packet, src, dst netip.AddrPort) {
 		SeqNum:     0,
 		AckNum:     0,
 		DataOffset: header.TCPMinimumSize,
-		Flags:      0,
-		WindowSize: 0,
+		Flags:      header.TCPFlagSyn | header.TCPFlagPsh,
+		WindowSize: 0xffff,
 		Checksum:   0,
 	})
 
@@ -36,7 +37,7 @@ func attachIPv4Hdr(b *packet.Packet, src, dst netip.Addr) {
 	ip := header.IPv4(b.AttachN(header.IPv4MinimumSize).Bytes())
 	ip.Encode(&header.IPv4Fields{
 		TOS:            0,
-		TotalLength:    0,
+		TotalLength:    uint16(len(ip)),
 		ID:             0,
 		Flags:          0,
 		FragmentOffset: 0,

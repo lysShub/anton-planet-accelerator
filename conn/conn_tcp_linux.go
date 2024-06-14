@@ -86,8 +86,14 @@ func (c *tcpConn) Read(b *packet.Packet) (err error) {
 	_, err = c.ReadFromAddrPort(b)
 	return err
 }
+
 func (c *tcpConn) Write(b *packet.Packet) (err error) {
-	return c.writeTo(b, c.raddr)
+	attachTcpHdr(b, c.laddr, c.raddr)
+	_, err = c.raw.Write(b.Bytes())
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
 }
 
 func (c *tcpConn) ReadFromAddrPort(b *packet.Packet) (src netip.AddrPort, err error) {
@@ -115,14 +121,9 @@ func (c *tcpConn) ReadFromAddrPort(b *packet.Packet) (src netip.AddrPort, err er
 	}
 	return src, nil
 }
-func (c *tcpConn) WriteToAddrPort(b *packet.Packet, to netip.AddrPort) (err error) {
-	if c.connect() {
-		return errors.WithStack(net.ErrWriteToConnected)
-	}
-	return c.writeTo(b, to)
-}
+func (c *tcpConn) connect() bool { return c.raddr.IsValid() }
 
-func (c *tcpConn) writeTo(b *packet.Packet, to netip.AddrPort) (err error) {
+func (c *tcpConn) WriteToAddrPort(b *packet.Packet, to netip.AddrPort) (err error) {
 	if !to.IsValid() {
 		return errors.WithStack(net.InvalidAddrError(to.String()))
 	}
@@ -135,7 +136,6 @@ func (c *tcpConn) writeTo(b *packet.Packet, to netip.AddrPort) (err error) {
 	}
 	return nil
 }
-func (c *tcpConn) connect() bool { return c.raddr.IsValid() }
 
 func (c *tcpConn) Close() error { return c.close(nil) }
 

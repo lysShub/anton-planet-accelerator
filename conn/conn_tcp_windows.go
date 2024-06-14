@@ -59,7 +59,7 @@ func dialTCP(laddr, raddr netip.AddrPort) (Conn, error) {
 		return ifi.(uint32)
 	}()
 
-	return c, errors.New("not support")
+	return c, nil
 }
 
 func listenTCP(laddr netip.AddrPort) (Conn, error) {
