@@ -1,3 +1,3 @@
 package nodes
 
-const Network = "udp4"
+const Network = "tcp4"

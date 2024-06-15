@@ -8,11 +8,12 @@ require (
 	github.com/jftuga/geodist v1.0.0
 	github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61
 	github.com/lysShub/fatun v0.0.0-20240601183817-825fbf1e595e
-	github.com/lysShub/netkit v0.0.0-20240601172000-da71e39de8d5
+	github.com/lysShub/netkit v0.0.0-20240615072556-80f7835754e8
 	github.com/lysShub/rawsock v0.0.0-20240601184254-6561883771fe
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.25.0
+	golang.org/x/sys v0.20.0
 	gvisor.dev/gvisor v0.0.0-20240521174809-5eedbf551134
 )
 
@@ -44,7 +45,6 @@ require (
 	golang.org/x/exp/shiny v0.0.0-20220827204233-334a2380cb91 // indirect
 	golang.org/x/image v0.5.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
-	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/text v0.15.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect

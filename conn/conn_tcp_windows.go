@@ -65,15 +65,17 @@ func listenTCP(laddr netip.AddrPort) (Conn, error) {
 	}
 
 	var filter = fmt.Sprintf(
-		"inbound and ip and tcp and localAddr=%s and localPort=%d ",
+		"inbound and ip and tcp and localAddr=%s and localPort=%d",
 		laddr.Addr().String(), laddr.Port(),
 	)
 	c.handle, err = divert.Open(filter, divert.Network, 0, 0)
 	if err != nil {
 		return nil, c.close(err)
 	}
+	c.outbound = divert.Address{}
+	c.outbound.SetOutbound(true)
 
-	return nil, errors.New("not support")
+	return c, nil
 }
 
 func (c *tcpConn) close(cause error) error {

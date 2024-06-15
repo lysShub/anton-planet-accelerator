@@ -102,16 +102,18 @@ func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
 }
 
 func (c *Client) close(cause error) error {
-	cause = errors.WithStack(cause)
-	if cause != nil {
-		c.config.logger.Error(cause.Error(), errorx.Trace(cause))
-	} else {
-		c.config.logger.Info("close")
+	if !c.closeErr.Closed() {
+		if cause != nil {
+			c.config.logger.Error(cause.Error(), errorx.Trace(cause))
+		} else {
+			c.config.logger.Info("close")
+		}
 	}
+
 	return c.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
 		if c.conn != nil {
-			errs = append(errs, c.capture.Close())
+			errs = append(errs, c.conn.Close())
 		}
 		if c.mapping != nil {
 			errs = append(errs, c.mapping.Close())
@@ -140,7 +142,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 	for _, kind := range []proto.Kind{
 		proto.PingProxyer, proto.PingForward, proto.PackLossUplink,
 	} {
-		var pkt = packet.Make(proto.HeaderSize)
+		var pkt = packet.Make(64 + proto.HeaderSize)
 		var hdr = proto.Header{
 			Kind:  kind,
 			Proto: syscall.IPPROTO_TCP,
@@ -193,10 +195,11 @@ func (c *Client) captureService() (_ error) {
 		addr divert.Address
 		ip   = packet.Make(0, c.config.MaxRecvBuff)
 		hdr  = proto.Header{Kind: proto.Data, Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0)}
+		head = 64
 	)
 
 	for {
-		n, err := c.capture.Recv(ip.Sets(0, 0xffff).Bytes(), &addr)
+		n, err := c.capture.Recv(ip.Sets(head, 0xffff).Bytes(), &addr)
 		if err != nil {
 			return c.close(err)
 		} else if n == 0 {
@@ -226,7 +229,7 @@ func (c *Client) captureService() (_ error) {
 			}
 		}
 		if pass {
-			if _, err = c.capture.Send(ip.SetHead(0).Bytes(), &addr); err != nil {
+			if _, err = c.capture.Send(ip.SetHead(head).Bytes(), &addr); err != nil {
 				return c.close(err)
 			}
 			continue
