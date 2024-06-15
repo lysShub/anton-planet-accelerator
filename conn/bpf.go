@@ -1,36 +1,27 @@
 package conn
 
-import "golang.org/x/net/bpf"
+import (
+	"encoding/binary"
+	"net/netip"
 
-func FilterPorts(srcPort, dstPort uint16) []bpf.Instruction {
-	var ins = iphdrLen()
+	"golang.org/x/net/bpf"
+	"gvisor.dev/gvisor/pkg/tcpip"
+)
 
-	ins = append(ins, filterPorts(srcPort, dstPort)...)
-	ins = append(ins,
-		bpf.RetConstant{Val: 0xffff},
-	)
-	return ins
-}
-
-// iphdrLen store ip header length to reg X
-func iphdrLen() []bpf.Instruction {
-	return []bpf.Instruction{
+func FilterIPv4AndPorts(srcPort, dstPort uint16) []bpf.Instruction {
+	var ins = []bpf.Instruction{
 		// load ip version to A
 		bpf.LoadAbsolute{Off: 0, Size: 1},
 		bpf.ALUOpConstant{Op: bpf.ALUOpShiftRight, Val: 4},
 
-		// ipv4
-		bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: 4, SkipTrue: 1},
+		// filter ipv4
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: 4, SkipTrue: 1},
+		bpf.RetConstant{Val: 0},
+
+		// load ipv4 header length to regX
 		bpf.LoadMemShift{Off: 0},
-
-		// ipv6
-		bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: 6, SkipTrue: 1},
-		bpf.LoadConstant{Dst: bpf.RegX, Val: 40},
 	}
-}
 
-// filterPorts filter tcp/udp port, require regX stored iphdr length.
-func filterPorts(srcPort, dstPort uint16) (ins []bpf.Instruction) {
 	if srcPort != 0 {
 		ins = append(ins,
 			bpf.LoadIndirect{Off: 0, Size: 2},
@@ -45,5 +36,127 @@ func filterPorts(srcPort, dstPort uint16) (ins []bpf.Instruction) {
 			bpf.RetConstant{Val: 0},
 		)
 	}
+
+	ins = append(ins,
+		bpf.RetConstant{Val: 0xffff},
+	)
+	return ins
+}
+
+func FilterIPv4AndEndpoint(src, dst netip.AddrPort, proto tcpip.TransportProtocolNumber) (ins []bpf.Instruction) {
+	if !src.Addr().Is4() || src.Addr().Is4() != dst.Addr().Is4() {
+		panic("only support ipv4")
+	}
+
+	// filter ipv4
+	ins = []bpf.Instruction{
+		bpf.LoadAbsolute{Off: 0, Size: 1},
+		bpf.ALUOpConstant{Op: bpf.ALUOpShiftRight, Val: 4},
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: 4, SkipTrue: 1},
+		bpf.RetConstant{Val: 0},
+	}
+
+	// filter proto
+	if proto != 0 {
+		ins = append(ins,
+			bpf.LoadAbsolute{Off: 9, Size: 1},
+			bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(proto), SkipTrue: 1},
+			bpf.RetConstant{Val: 0},
+		)
+	}
+
+	if !src.Addr().IsUnspecified() {
+		srcInt := binary.BigEndian.Uint32(src.Addr().AsSlice())
+
+		ins = append(ins,
+			bpf.LoadAbsolute{Off: 12, Size: 4},
+			bpf.JumpIf{Cond: bpf.JumpEqual, Val: srcInt, SkipTrue: 1},
+			bpf.RetConstant{Val: 0},
+		)
+	}
+	if !dst.Addr().IsUnspecified() {
+		dstInt := binary.BigEndian.Uint32(dst.Addr().AsSlice())
+
+		ins = append(ins,
+			bpf.LoadAbsolute{Off: 16, Size: 4},
+			bpf.JumpIf{Cond: bpf.JumpEqual, Val: dstInt, SkipTrue: 1},
+			bpf.RetConstant{Val: 0},
+		)
+	}
+
+	ins = append(ins,
+		// load ipv4 header length to regX
+		bpf.LoadMemShift{Off: 0},
+	)
+
+	if src.Port() != 0 {
+		ins = append(ins,
+			bpf.LoadIndirect{Off: 0, Size: 2},
+			bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(src.Port()), SkipTrue: 1},
+			bpf.RetConstant{Val: 0},
+		)
+	}
+	if dst.Port() != 0 {
+		ins = append(ins,
+			bpf.LoadIndirect{Off: 2, Size: 2},
+			bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dst.Port()), SkipTrue: 1},
+			bpf.RetConstant{Val: 0},
+		)
+	}
+
+	ins = append(ins,
+		bpf.RetConstant{Val: 0xffff},
+	)
+	return ins
+}
+
+func FilterIPv4AndLocal(dst netip.AddrPort, proto tcpip.TransportProtocolNumber) (ins []bpf.Instruction) {
+	if !dst.Addr().Is4() {
+		panic("only support ipv4")
+	}
+
+	// filter ipv4
+	ins = []bpf.Instruction{
+		bpf.LoadAbsolute{Off: 0, Size: 1},
+		bpf.ALUOpConstant{Op: bpf.ALUOpShiftRight, Val: 4},
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: 4, SkipTrue: 1},
+		bpf.RetConstant{Val: 0},
+	}
+
+	// filter proto
+	if proto != 0 {
+		ins = append(ins,
+			bpf.LoadAbsolute{Off: 9, Size: 1},
+			bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(proto), SkipTrue: 1},
+			bpf.RetConstant{Val: 0},
+		)
+	}
+
+	if !dst.Addr().IsUnspecified() {
+		dstInt := binary.BigEndian.Uint32(dst.Addr().AsSlice())
+
+		ins = append(ins,
+			bpf.LoadAbsolute{Off: 16, Size: 4},
+			bpf.JumpIf{Cond: bpf.JumpEqual, Val: dstInt, SkipTrue: 1},
+			bpf.RetConstant{Val: 0},
+		)
+	}
+
+	ins = append(ins,
+		// load ipv4 header length to regX
+		bpf.LoadMemShift{Off: 0},
+	)
+
+	if dst.Port() != 0 {
+		ins = append(ins,
+			bpf.LoadIndirect{Off: 2, Size: 2},
+			bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dst.Port()), SkipTrue: 1},
+			bpf.RetConstant{Val: 0},
+		)
+	}
+
+	ins = append(ins,
+		bpf.RetConstant{Val: 0xffff},
+	)
 	return ins
 }

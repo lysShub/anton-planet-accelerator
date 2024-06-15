@@ -89,6 +89,8 @@ func resolveAddr(addr string) (netip.AddrPort, error) {
 	}
 	if len(udpAddr.IP) == 0 {
 		udpAddr.IP = netip.IPv4Unspecified().AsSlice()
+	} else if udpAddr.IP.To4() != nil {
+		udpAddr.IP = udpAddr.IP.To4()
 	}
 
 	a := udpAddr.AddrPort()

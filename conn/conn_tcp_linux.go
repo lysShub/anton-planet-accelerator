@@ -40,7 +40,7 @@ func dialTCP(laddr, raddr netip.AddrPort) (Conn, error) {
 	if err != nil {
 		return nil, c.close(errors.WithStack(err))
 	}
-	err = SetRawBPF(c.raw, FilterPorts(c.raddr.Port(), c.laddr.Port()))
+	err = SetRawBPF(c.raw, FilterIPv4AndPorts(c.raddr.Port(), c.laddr.Port()))
 	if err != nil {
 		return nil, c.close(err)
 	}
@@ -48,7 +48,7 @@ func dialTCP(laddr, raddr netip.AddrPort) (Conn, error) {
 	return c, nil
 }
 
-func listenTCP(laddr netip.AddrPort) (Conn, error) {
+func listenTCP_bak(laddr netip.AddrPort) (Conn, error) {
 	var c = &tcpConn{}
 	var err error
 
@@ -61,7 +61,7 @@ func listenTCP(laddr netip.AddrPort) (Conn, error) {
 	if err != nil {
 		return nil, c.close(errors.WithStack(err))
 	}
-	err = SetRawBPF(c.raw, FilterPorts(0, c.laddr.Port()))
+	err = SetRawBPF(c.raw, FilterIPv4AndPorts(0, c.laddr.Port()))
 	if err != nil {
 		return nil, c.close(err)
 	}

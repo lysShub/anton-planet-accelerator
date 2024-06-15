@@ -8,8 +8,9 @@ require (
 	github.com/jftuga/geodist v1.0.0
 	github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61
 	github.com/lysShub/fatun v0.0.0-20240601183817-825fbf1e595e
-	github.com/lysShub/netkit v0.0.0-20240615072556-80f7835754e8
+	github.com/lysShub/netkit v0.0.0-20240615105257-9071e92058eb
 	github.com/lysShub/rawsock v0.0.0-20240601184254-6561883771fe
+	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.25.0
@@ -30,7 +31,6 @@ require (
 	github.com/josharian/native v1.0.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/lysShub/wintun-go v0.0.0-20240410130619-383598c11ea1 // indirect
-	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875 // indirect
 	github.com/mdlayher/ethernet v0.0.0-20220221185849-529eae5b6118 // indirect
 	github.com/mdlayher/packet v1.0.0 // indirect
 	github.com/mdlayher/socket v0.2.1 // indirect
