@@ -4,7 +4,9 @@
 package conn
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/lysShub/netkit/packet"
 	"github.com/stretchr/testify/require"
@@ -16,10 +18,13 @@ func TestClient(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	var b = packet.From([]byte("hello"))
-	err = conn.Write(b)
-	require.NoError(t, err)
+	for i := 0; i < 64; i++ {
+		var b = packet.Make(64, 0, 8).Append([]byte("hello")...)
+		err = conn.Write(b)
+		require.NoError(t, err)
 
-	err = conn.Read(b.Sets(0, 0xffff))
-	require.NoError(t, err)
+		fmt.Println("send", i)
+		time.Sleep(time.Second)
+	}
+
 }
