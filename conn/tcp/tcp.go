@@ -193,6 +193,9 @@ func (t *pseudoTCP) recv(tcp *packet.Packet) error {
 			t.send(packet.Make(64), header.TCPFlagAck)
 		} else {
 			t.send(packet.Make(64, 0), header.TCPFlagSyn|header.TCPFlagAck)
+			t.mu.Lock()
+			t.sndNxt++
+			t.mu.Unlock()
 		}
 	}
 
