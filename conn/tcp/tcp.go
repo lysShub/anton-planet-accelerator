@@ -144,7 +144,7 @@ func newPseudoTCP(remote netip.AddrPort, conn *TCPConn, dial bool) *pseudoTCP {
 
 func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags) error {
 	if p.rcvNxt == 0 { // fast open
-		flags = header.TCPFlagSyn
+		flags |= header.TCPFlagSyn
 	}
 
 	payload := pkt.Data()
@@ -180,6 +180,14 @@ func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags) error {
 func (t *pseudoTCP) recv(tcp *packet.Packet) error {
 	hdr := header.TCP(tcp.Bytes())
 
+	if hdr.Flags().Contains(header.TCPFlagSyn) {
+		if t.dial {
+			t.send(packet.Make(64), header.TCPFlagAck)
+		} else {
+			t.send(packet.Make(64, 0), header.TCPFlagSyn|header.TCPFlagAck)
+		}
+	}
+
 	nxt := hdr.SequenceNumber() + uint32(len(hdr.Payload()))
 	t.mu.Lock()
 	if nxt > t.rcvNxt {
@@ -187,17 +195,6 @@ func (t *pseudoTCP) recv(tcp *packet.Packet) error {
 		t.rcvNxt = nxt
 	}
 	t.mu.Unlock()
-
-	if hdr.Flags().Contains(header.TCPFlagSyn) {
-		t.mu.Lock()
-		t.sndNxt++
-		t.mu.Unlock()
-		if t.dial {
-			t.send(packet.Make(64), header.TCPFlagAck)
-		} else {
-			t.send(packet.Make(64, 0), header.TCPFlagSyn|header.TCPFlagAck)
-		}
-	}
 
 	tcp.DetachN(int(hdr.DataOffset()))
 	return nil
