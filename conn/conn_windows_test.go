@@ -25,6 +25,12 @@ func TestClient(t *testing.T) {
 		require.NoError(t, err)
 
 		fmt.Println("send", i)
+
+		src, err := conn.ReadFromAddrPort(b.Sets(64, 0xffff))
+		require.NoError(t, err)
+
+		fmt.Println("recv", src.String())
+
 		time.Sleep(time.Second)
 	}
 

@@ -22,6 +22,7 @@ type TCPConn struct {
 	eps *eps
 }
 
+// Bind bind a datagram pseudo-tcp connect, require call ReadFromAddrPort always.
 func Bind(laddr netip.AddrPort) (*TCPConn, error) {
 	var c = &TCPConn{eps: neweps()}
 	var err error
