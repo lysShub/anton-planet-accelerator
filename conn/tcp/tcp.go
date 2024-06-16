@@ -142,8 +142,8 @@ func newPseudoTCP(remote netip.AddrPort, conn *TCPConn, dial bool) *pseudoTCP {
 }
 
 func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags) error {
-	if p.rcvNxt == 0 {
-		return p.send(pkt, header.TCPFlagSyn|header.TCPFlagPsh)
+	if p.rcvNxt == 0 { // fast open
+		flags = header.TCPFlagSyn
 	}
 
 	payload := pkt.Data()
