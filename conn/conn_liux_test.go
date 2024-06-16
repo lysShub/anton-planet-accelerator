@@ -25,7 +25,7 @@ func TestServer(t *testing.T) {
 		fmt.Println("收到", raddr.String())
 
 		if b.Data() == 0 {
-			continue
+			panic("")
 		}
 		err = conn.WriteToAddrPort(b, raddr)
 		require.NoError(t, err)

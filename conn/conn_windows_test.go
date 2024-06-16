@@ -26,7 +26,7 @@ func TestClient(t *testing.T) {
 
 		fmt.Println("send", i)
 
-		src, err := conn.ReadFromAddrPort(b.Sets(64, 0xffff))
+		src, err := conn.ReadFromAddrPort(b.Sets(0, 0xffff))
 		require.NoError(t, err)
 
 		fmt.Println("recv", src.String())

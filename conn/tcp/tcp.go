@@ -152,7 +152,7 @@ func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags) error {
 	hdr.Encode(&header.TCPFields{
 		SrcPort:       p.lport,
 		DstPort:       p.rport,
-		SeqNum:        p.rcvNxt,
+		SeqNum:        p.sndNxt,
 		AckNum:        p.rcvNxt,
 		DataOffset:    header.TCPMinimumSize,
 		Flags:         flags,
