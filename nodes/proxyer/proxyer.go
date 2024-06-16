@@ -39,12 +39,12 @@ func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) 
 		return nil, err
 	}
 
-	p.conn, err = conn.Listen(nodes.Network, addr)
+	p.conn, err = conn.Bind(nodes.Network, addr)
 	if err != nil {
 		return nil, p.close(err)
 	}
 
-	p.sender, err = conn.Listen(nodes.Network, "")
+	p.sender, err = conn.Bind(nodes.Network, "")
 	if err != nil {
 		return nil, p.close(err)
 	}

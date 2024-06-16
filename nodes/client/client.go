@@ -69,7 +69,7 @@ func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
 	}
 	var err error
 
-	c.conn, err = conn.Listen(nodes.Network, "")
+	c.conn, err = conn.Bind(nodes.Network, "")
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

@@ -1,4 +1,4 @@
-package conn
+package udp
 
 import (
 	"log/slog"
@@ -15,18 +15,7 @@ type udpConn struct {
 	conn *net.UDPConn
 }
 
-func dialUDP(laddr, raddr netip.AddrPort) (Conn, error) {
-	conn, err := net.DialUDP("udp",
-		&net.UDPAddr{IP: laddr.Addr().AsSlice(), Port: int(laddr.Port())},
-		&net.UDPAddr{IP: raddr.Addr().AsSlice(), Port: int(raddr.Port())},
-	)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return &udpConn{conn}, nil
-}
-
-func listenUDP(laddr netip.AddrPort) (Conn, error) {
+func Bind(laddr netip.AddrPort) (*udpConn, error) {
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: laddr.Addr().AsSlice(), Port: int(laddr.Port())})
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -34,21 +23,6 @@ func listenUDP(laddr netip.AddrPort) (Conn, error) {
 	return &udpConn{conn}, nil
 }
 
-func (c *udpConn) Read(b *packet.Packet) (err error) {
-	n, err := c.conn.Read(b.Bytes())
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	b.SetData(n)
-	return nil
-}
-func (c *udpConn) Write(b *packet.Packet) (err error) {
-	_, err = c.conn.Write(b.Bytes())
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	return nil
-}
 func (c *udpConn) ReadFromAddrPort(b *packet.Packet) (netip.AddrPort, error) {
 	n, addr, err := c.conn.ReadFromUDPAddrPort(b.Bytes())
 	if err != nil {
@@ -60,18 +34,14 @@ func (c *udpConn) ReadFromAddrPort(b *packet.Packet) (netip.AddrPort, error) {
 	b.SetData(n)
 	return addr, nil
 }
+
 func (c *udpConn) WriteToAddrPort(b *packet.Packet, dst netip.AddrPort) error {
 	_, err := c.conn.WriteToUDPAddrPort(b.Bytes(), dst)
 	return err
 }
+
 func (c *udpConn) Close() error { return c.conn.Close() }
+
 func (c *udpConn) LocalAddr() netip.AddrPort {
 	return netip.MustParseAddrPort(c.conn.LocalAddr().String())
-}
-func (c *udpConn) RemoteAddr() netip.AddrPort {
-	addr := c.conn.RemoteAddr()
-	if addr != nil {
-		return netip.MustParseAddrPort(addr.String())
-	}
-	return netip.AddrPort{}
 }

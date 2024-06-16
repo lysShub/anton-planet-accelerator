@@ -66,7 +66,7 @@ func New(addr string, config *Config) (*Forward, error) {
 		return nil, err
 	}
 
-	f.conn, err = conn.Listen(nodes.Network, addr)
+	f.conn, err = conn.Bind(nodes.Network, addr)
 	if err != nil {
 		return nil, f.close(err)
 	}

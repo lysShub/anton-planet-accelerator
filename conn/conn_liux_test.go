@@ -5,6 +5,7 @@ package conn
 
 import (
 	"fmt"
+	"net/netip"
 	"testing"
 
 	"github.com/lysShub/netkit/packet"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestServer(t *testing.T) {
-	conn, err := Listen("tcp", ":19987")
+	conn, err := Bind("tcp", ":19987")
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -32,14 +33,15 @@ func TestServer(t *testing.T) {
 }
 
 func TestClient(t *testing.T) {
-	conn, err := Dial("tcp", "", "8.137.91.200:19987")
+	dst := netip.MustParseAddrPort("8.137.91.200:19987")
+	conn, err := Bind("tcp", "")
 	require.NoError(t, err)
 	defer conn.Close()
 
 	var b = packet.From([]byte("hello"))
-	err = conn.Write(b)
+	err = conn.WriteToAddrPort(b, dst)
 	require.NoError(t, err)
 
-	err = conn.Read(b.Sets(0, 0xffff))
+	_, err = conn.ReadFromAddrPort(b.Sets(0, 0xffff))
 	require.NoError(t, err)
 }

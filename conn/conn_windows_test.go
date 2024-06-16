@@ -5,6 +5,7 @@ package conn
 
 import (
 	"fmt"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -13,14 +14,14 @@ import (
 )
 
 func TestClient(t *testing.T) {
-
-	conn, err := Dial("tcp", "", "8.137.91.200:19987")
+	dst := netip.MustParseAddrPort("8.137.91.200:19987")
+	conn, err := Bind("tcp", "")
 	require.NoError(t, err)
 	defer conn.Close()
 
 	for i := 0; i < 64; i++ {
 		var b = packet.Make(64, 0, 8).Append([]byte("hello")...)
-		err = conn.Write(b)
+		err = conn.WriteToAddrPort(b, dst)
 		require.NoError(t, err)
 
 		fmt.Println("send", i)
