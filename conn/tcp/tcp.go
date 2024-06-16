@@ -147,13 +147,18 @@ func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags) error {
 		flags |= header.TCPFlagSyn
 	}
 
+	ack := uint32(0)
+	if flags.Contains(header.TCPFlagAck) {
+		ack = p.rcvNxt
+	}
+
 	payload := pkt.Data()
 	hdr := header.TCP(pkt.AttachN(header.TCPMinimumSize).Bytes())
 	hdr.Encode(&header.TCPFields{
 		SrcPort:       p.lport,
 		DstPort:       p.rport,
 		SeqNum:        p.sndNxt,
-		AckNum:        p.rcvNxt,
+		AckNum:        ack,
 		DataOffset:    header.TCPMinimumSize,
 		Flags:         flags,
 		WindowSize:    2048,
