@@ -23,13 +23,15 @@ type TCPConn struct {
 }
 
 func Bind(laddr netip.AddrPort) (*TCPConn, error) {
-	var c = &TCPConn{laddr: laddr, eps: neweps()}
+	var c = &TCPConn{eps: neweps()}
 	var err error
 
 	c.raw, err = BindIPConn(laddr, header.TCPProtocolNumber)
 	if err != nil {
 		return nil, err
 	}
+
+	c.laddr = c.raw.AddrPort()
 	return c, nil
 }
 
@@ -55,6 +57,8 @@ func (c *TCPConn) ReadFromAddrPort(b *packet.Packet) (netip.AddrPort, error) {
 	} else if b.Data() < header.TCPMinimumSize {
 		return netip.AddrPort{}, errorx.WrapTemp(errors.Errorf("tcp packet %#v", b.Bytes()))
 	}
+
+	println("收到")
 
 	tcp := header.TCP(b.Bytes())
 	raddr := netip.AddrPortFrom(rip, tcp.SourcePort())
@@ -165,7 +169,7 @@ func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags) error {
 		Checksum:      0,
 		UrgentPointer: 0,
 	})
-	sum := checksum.Combine(p.pseudo1, header.TCPMinimumSize)
+	sum := checksum.Combine(p.pseudo1, uint16(len(hdr)))
 	sum = checksum.Checksum(hdr, sum)
 	hdr.SetChecksum(^sum)
 
