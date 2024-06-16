@@ -185,6 +185,18 @@ func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags) error {
 func (t *pseudoTCP) recv(tcp *packet.Packet) error {
 	hdr := header.TCP(tcp.Bytes())
 
+	if hdr.Flags().Contains(header.TCPFlagSyn) {
+		if t.dial {
+			t.send(packet.Make(64), header.TCPFlagAck)
+		} else {
+			t.rcvNxt = hdr.SequenceNumber()
+			t.send(packet.Make(64, 0), header.TCPFlagSyn|header.TCPFlagAck)
+			t.mu.Lock()
+			t.sndNxt++
+			t.mu.Unlock()
+		}
+	}
+
 	nxt := hdr.SequenceNumber() + uint32(len(hdr.Payload()))
 	t.mu.Lock()
 	if nxt > t.rcvNxt {
@@ -192,17 +204,6 @@ func (t *pseudoTCP) recv(tcp *packet.Packet) error {
 		t.rcvNxt = nxt
 	}
 	t.mu.Unlock()
-
-	if hdr.Flags().Contains(header.TCPFlagSyn) {
-		if t.dial {
-			t.send(packet.Make(64), header.TCPFlagAck)
-		} else {
-			t.send(packet.Make(64, 0), header.TCPFlagSyn|header.TCPFlagAck)
-			t.mu.Lock()
-			t.sndNxt++
-			t.mu.Unlock()
-		}
-	}
 
 	tcp.DetachN(int(hdr.DataOffset()))
 	return nil
