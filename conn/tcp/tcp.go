@@ -40,9 +40,6 @@ func (c *TCPConn) WriteToAddrPort(b *packet.Packet, to netip.AddrPort) (err erro
 	if t == nil {
 		t = newPseudoTCP(to, c, true)
 		c.eps.setep(to, t)
-		if err := t.send_sync(); err != nil {
-			return err
-		}
 	}
 
 	return t.send(b, header.TCPFlagPsh)
@@ -58,8 +55,6 @@ func (c *TCPConn) ReadFromAddrPort(b *packet.Packet) (netip.AddrPort, error) {
 		return netip.AddrPort{}, errorx.WrapTemp(errors.Errorf("tcp packet %#v", b.Bytes()))
 	}
 
-	println("收到")
-
 	tcp := header.TCP(b.Bytes())
 	raddr := netip.AddrPortFrom(rip, tcp.SourcePort())
 
@@ -71,11 +66,7 @@ func (c *TCPConn) ReadFromAddrPort(b *packet.Packet) (netip.AddrPort, error) {
 	t.recv(b)
 
 	if b.Data() == 0 {
-		if tcp.Flags() == header.TCPFlagSyn {
-			if err := t.recv_sync(); err != nil {
-				return netip.AddrPort{}, err
-			}
-		}
+
 		return c.ReadFromAddrPort(b.Sets(head, data))
 	} else {
 		return raddr, nil
@@ -151,18 +142,17 @@ func newPseudoTCP(remote netip.AddrPort, conn *TCPConn, dial bool) *pseudoTCP {
 }
 
 func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags) error {
-	payload := pkt.Data()
-	nxt := uint32(0)
-	if flags.Contains(header.TCPFlagAck) {
-		nxt = p.rcvNxt
+	if p.rcvNxt == 0 {
+		return p.send(pkt, header.TCPFlagSyn|header.TCPFlagPsh)
 	}
 
+	payload := pkt.Data()
 	hdr := header.TCP(pkt.AttachN(header.TCPMinimumSize).Bytes())
 	hdr.Encode(&header.TCPFields{
 		SrcPort:       p.lport,
 		DstPort:       p.rport,
-		SeqNum:        p.sndNxt,
-		AckNum:        nxt,
+		SeqNum:        p.rcvNxt,
+		AckNum:        p.rcvNxt,
 		DataOffset:    header.TCPMinimumSize,
 		Flags:         flags,
 		WindowSize:    2048,
@@ -197,22 +187,16 @@ func (t *pseudoTCP) recv(tcp *packet.Packet) error {
 	}
 	t.mu.Unlock()
 
+	if hdr.Flags().Contains(header.TCPFlagSyn) {
+		if t.dial {
+			t.send(packet.Make(64), header.TCPFlagAck)
+		} else {
+			t.send(packet.Make(64, 0), header.TCPFlagSyn|header.TCPFlagAck)
+		}
+	}
+
 	tcp.DetachN(int(hdr.DataOffset()))
 	return nil
-}
-
-func (p *pseudoTCP) send_sync() error {
-	if !p.dial {
-		panic("")
-	}
-	return p.send(packet.Make(64, 0), header.TCPFlagSyn)
-}
-
-func (p *pseudoTCP) recv_sync() error {
-	if p.dial {
-		panic("")
-	}
-	return p.send(packet.Make(64, 0), header.TCPFlagSyn|header.TCPFlagAck)
 }
 
 const keepalive time.Duration = time.Second * 15
@@ -230,4 +214,8 @@ func (p *pseudoTCP) keepalive() {
 		p.mu.Unlock()
 		time.AfterFunc(keepalive, p.keepalive)
 	}
+}
+
+func (p *pseudoTCP) close(cause error) error {
+	panic(cause)
 }
