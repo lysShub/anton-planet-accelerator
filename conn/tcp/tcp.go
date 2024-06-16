@@ -189,6 +189,9 @@ func (t *pseudoTCP) recv(tcp *packet.Packet) error {
 	t.mu.Unlock()
 
 	if hdr.Flags().Contains(header.TCPFlagSyn) {
+		t.mu.Lock()
+		t.sndNxt++
+		t.mu.Unlock()
 		if t.dial {
 			t.send(packet.Make(64), header.TCPFlagAck)
 		} else {
