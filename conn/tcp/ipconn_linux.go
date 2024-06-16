@@ -52,7 +52,7 @@ func BindIPConn(laddr netip.AddrPort, proto tcpip.TransportProtocolNumber) (IPCo
 
 		// filter dst port
 		bpf.LoadIndirect{Off: 2, Size: 2},
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(laddr.Port()), SkipTrue: 1},
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(c.laddr.Port()), SkipTrue: 1},
 		bpf.RetConstant{Val: 0},
 		bpf.RetConstant{Val: 0xffff},
 	}); err != nil {

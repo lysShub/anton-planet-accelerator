@@ -48,7 +48,7 @@ func BindIPConn(laddr netip.AddrPort, proto tcpip.TransportProtocolNumber) (IPCo
 
 	var filter = fmt.Sprintf(
 		"inbound and ip and tcp and localAddr=%s and localPort=%d",
-		laddr.Addr().String(), laddr.Port(),
+		c.laddr.Addr().String(), c.laddr.Port(),
 	)
 	c.raw, err = divert.Open(filter, divert.Network, 0, 0)
 	if err != nil {
