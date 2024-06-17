@@ -26,7 +26,7 @@ type Proxyer struct {
 
 	sender conn.Conn
 
-	stats nodes.PLStats
+	stats *nodes.PLStats
 
 	closeErr errorx.CloseErr
 }
@@ -35,6 +35,7 @@ func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) 
 	var p = &Proxyer{
 		config:  config.init(),
 		forward: forward,
+		stats:   nodes.NewPLStats(proto.MaxID),
 	}
 	err := nodes.DisableOffload(config.logger)
 	if err != nil {
@@ -115,7 +116,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		case proto.PackLossUplink:
-			pkt.Append(proto.PL(p.stats.PL()).Encode()...)
+			pkt.Append(proto.PL(p.stats.PL(nodes.PLScale)).Encode()...)
 
 			err = p.conn.WriteToAddrPort(pkt, caddr)
 			if err != nil {

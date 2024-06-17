@@ -18,6 +18,8 @@ type Header struct {
 	Server netip.Addr
 }
 
+const MaxID = 0xff
+
 func (h *Header) Valid() bool {
 	return h != nil && h.Server.Is4() && h.Client.Addr().Is4() &&
 		(h.Proto == syscall.IPPROTO_UDP || h.Proto == syscall.IPPROTO_TCP) &&

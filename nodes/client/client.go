@@ -61,7 +61,7 @@ type msg struct {
 func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
 	var c = &Client{
 		config:          config.init(),
-		pl:              nodes.NewPLStats(),
+		pl:              nodes.NewPLStats(proto.MaxID),
 		proxyers:        proxyers,
 		routeProbeCache: map[netip.Addr]int8{},
 		route:           NewRoute(proxyers[0]),
@@ -185,7 +185,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 			}
 		}
 	}
-	stats.PackLossDownlink = proto.PL(c.pl.PL())
+	stats.PackLossDownlink = proto.PL(c.pl.PL(nodes.PLScale))
 
 	return &stats, nil
 }

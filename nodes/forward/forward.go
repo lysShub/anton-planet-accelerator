@@ -123,7 +123,7 @@ func (f *Forward) recvService() (err error) {
 				return f.close(err)
 			}
 		case proto.PackLossUplink:
-			pkt.SetHead(head).Append(proto.PL(stats.pl.PL()).Encode()...)
+			pkt.SetHead(head).Append(proto.PL(stats.pl.PL(nodes.PLScale)).Encode()...)
 			err = f.conn.WriteToAddrPort(pkt, paddr)
 			if err != nil {
 				return f.close(err)
@@ -200,7 +200,7 @@ func (f *Forward) statsRecv(caddr netip.AddrPort, id uint8) *stats {
 	f.connStatsMu.RUnlock()
 	if !has {
 		s = &stats{
-			pl: nodes.NewPLStats(),
+			pl: nodes.NewPLStats(proto.MaxID),
 		}
 		f.connStatsMu.Lock()
 		f.connStats[caddr] = s
@@ -245,7 +245,7 @@ func (f *Forward) statsDown(caddr netip.AddrPort) uint8 {
 	f.connStatsMu.RUnlock()
 	if !has {
 		s = &stats{
-			pl: nodes.NewPLStats(),
+			pl: nodes.NewPLStats(nodes.PLScale),
 		}
 		f.connStatsMu.Lock()
 		f.connStats[caddr] = s
