@@ -61,7 +61,7 @@ type msg struct {
 func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
 	var c = &Client{
 		config:          config.init(),
-		pl:              &nodes.PLStats{},
+		pl:              nodes.NewPLStats(),
 		proxyers:        proxyers,
 		routeProbeCache: map[netip.Addr]int8{},
 		route:           NewRoute(proxyers[0]),

@@ -200,7 +200,7 @@ func (f *Forward) statsRecv(caddr netip.AddrPort, id uint8) *stats {
 	f.connStatsMu.RUnlock()
 	if !has {
 		s = &stats{
-			pl: &nodes.PLStats{},
+			pl: nodes.NewPLStats(),
 		}
 		f.connStatsMu.Lock()
 		f.connStats[caddr] = s
@@ -245,7 +245,7 @@ func (f *Forward) statsDown(caddr netip.AddrPort) uint8 {
 	f.connStatsMu.RUnlock()
 	if !has {
 		s = &stats{
-			pl: &nodes.PLStats{},
+			pl: nodes.NewPLStats(),
 		}
 		f.connStatsMu.Lock()
 		f.connStats[caddr] = s

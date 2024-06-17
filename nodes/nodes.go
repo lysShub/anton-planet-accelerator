@@ -1,6 +1,6 @@
 package nodes
 
 const (
-	ProxyerNetwork = "tcp4"
+	ProxyerNetwork = "udp4"
 	ForwardNetwork = "udp4"
 )

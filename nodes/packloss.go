@@ -5,32 +5,51 @@ import (
 )
 
 type PLStats struct {
+	dimension int
+
 	mu       sync.RWMutex
 	deltaSum int
 	count    int
 	lastId   int
-	lastPl   float64
+}
+
+func NewPLStats() *PLStats {
+	return NewPLStatsWithDimension(64)
+}
+
+func NewPLStatsWithDimension(dimension int) *PLStats {
+	if dimension < 0 {
+		dimension = -dimension
+	}
+	if dimension < 1 {
+		dimension = 1
+	}
+	return &PLStats{dimension: dimension}
 }
 
 func (p *PLStats) PL() float64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.count == 0 {
+
+	if p.deltaSum < 0 {
+		p.deltaSum = -p.deltaSum
+	}
+	if p.deltaSum < p.dimension {
 		return 0
-	} else if p.count < 64 {
-		return p.lastPl
 	}
 
-	dropedCount := p.count - 1 - p.deltaSum
+	//  125  4 3
+	// 12345 4 5
+	dropedCount := p.deltaSum - (p.count - 1)
 	if dropedCount < 0 {
 		dropedCount = -dropedCount
 	}
+
 	pl := float64(dropedCount) / float64(p.count+dropedCount)
 
 	p.deltaSum = 0
 	p.count = 0
 	p.lastId = 0
-	p.lastPl = pl
 	return pl
 }
 
@@ -44,10 +63,14 @@ func (p *PLStats) ID(id int) int {
 	if p.count == 0 {
 		p.lastId = id
 	} else {
-		if id == 0 {
-			p.count--
+		n := id - p.lastId
+		if -p.dimension < n && n < p.dimension {
+			p.deltaSum += n
 		} else {
-			p.deltaSum += id - p.lastId
+			p.deltaSum += 1
+			// if debug.Debug() {
+			// 	println("loose id", n)
+			// }
 		}
 		p.lastId = id
 	}
