@@ -98,7 +98,7 @@ func (p *PseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags, seq, ack uin
 		ack = 0
 	}
 
-	payload := pkt.Data()
+	payload := uint32(pkt.Data())
 	hdr := header.TCP(pkt.AttachN(header.TCPMinimumSize).Bytes())
 	hdr.Encode(&header.TCPFields{
 		SrcPort:       p.lport,
@@ -119,8 +119,11 @@ func (p *PseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags, seq, ack uin
 		return err
 	}
 
-	if payload > 0 {
-		p.sndNxt.Add(uint32(payload))
+	if payload+seq > p.sndNxt.Load() {
+		p.sndNxt.Store(seq + payload)
+	}
+	if ack > p.rcvNxt.Load() {
+		p.rcvNxt.Store(ack)
 	}
 	return nil
 }
