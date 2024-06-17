@@ -20,8 +20,8 @@ func main() {
 		MaxRecvBuff: 1536,
 	}
 
-	forward := netip.MustParseAddrPort("45.150.236.6:19986") // 东京
-	// forward := netip.MustParseAddrPort("45.131.69.50:19986") // 莫斯科
+	// forward := netip.MustParseAddrPort("45.150.236.6:19986") // 东京
+	forward := netip.MustParseAddrPort("45.131.69.50:19986") // 莫斯科
 
 	var t = test.T()
 	p, err := proxyer.New(":19986", forward, &config)
