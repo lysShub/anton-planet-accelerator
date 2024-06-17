@@ -25,9 +25,8 @@ type pseudoTCP struct {
 
 	mu          sync.RWMutex
 	alive       bool
-	acked       bool
 	established bool
-	isn         uint32
+	isn, ian    uint32
 	sndNxt      uint32
 	rcvNxt      uint32
 }
@@ -57,30 +56,35 @@ func newPseudoTCP(remote netip.AddrPort, conn *TCPConn, dial bool) *pseudoTCP {
 
 func (p *pseudoTCP) Send(pkt *packet.Packet) error {
 	if p.handshaked() {
-		return p.send(pkt, header.TCPFlagPsh)
+		return p.send(pkt, header.TCPFlagPsh, 0, 0)
 	} else {
 		// todo: cache this packet
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		if p.dial {
-			if p.rcvNxt == 0 {
-				return p.send(packet.Make(64), header.TCPFlagSyn)
+			if p.ian == 0 {
+				return p.send(packet.Make(64), header.TCPFlagSyn, p.isn, 0)
 			} else {
-				return p.send(packet.Make(64), header.TCPFlagAck)
+				return p.send(packet.Make(64), header.TCPFlagAck, p.isn+1, p.ian+1)
 			}
 		} else {
-			if p.rcvNxt != 0 {
-				return p.send(packet.Make(64), header.TCPFlagSyn|header.TCPFlagAck)
+			if p.ian != 0 {
+				return p.send(packet.Make(64), header.TCPFlagSyn|header.TCPFlagAck, p.isn, p.ian+1)
 			}
 		}
 	}
 	return nil
 }
 
-func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags) error {
-	ack := uint32(0)
-	if flags.Contains(header.TCPFlagAck) {
+func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags, seq, ack uint32) error {
+	if seq == 0 {
+		seq = p.sndNxt
+	}
+	if ack == 0 {
 		ack = p.rcvNxt
+	}
+	if !flags.Contains(header.TCPFlagAck) {
+		ack = 0
 	}
 
 	payload := pkt.Data()
@@ -88,7 +92,7 @@ func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags) error {
 	hdr.Encode(&header.TCPFields{
 		SrcPort:       p.lport,
 		DstPort:       p.rport,
-		SeqNum:        p.sndNxt,
+		SeqNum:        seq,
 		AckNum:        ack,
 		DataOffset:    header.TCPMinimumSize,
 		Flags:         flags,
@@ -122,25 +126,24 @@ func (p *pseudoTCP) Recv(tcp *packet.Packet) error {
 		defer p.mu.Unlock()
 		if p.dial {
 			if tcp.Flags() == header.TCPFlagSyn|header.TCPFlagAck {
-				if !p.acked {
-					p.rcvNxt = tcp.SequenceNumber() + 1
-					p.acked = true
+				if p.ian == 0 {
+					p.ian = tcp.SequenceNumber()
 				}
-				return p.send(packet.Make(64), header.TCPFlagAck)
+				return p.send(packet.Make(64), header.TCPFlagAck, p.isn+1, p.ian+1)
 			}
 		} else {
 			switch tcp.Flags() {
 			case header.TCPFlagSyn:
-				if !p.acked {
-					p.rcvNxt = tcp.SequenceNumber() + 1
-					p.acked = true
+				if p.ian == 0 {
+					p.ian = tcp.SequenceNumber()
 				}
-				return p.send(packet.Make(64), header.TCPFlagSyn|header.TCPFlagAck)
+				p.rcvNxt = p.ian + 1
+				return p.send(packet.Make(64), header.TCPFlagSyn|header.TCPFlagAck, p.isn, p.ian+1)
 			case header.TCPFlagAck:
 				if tcp.AckNumber() == p.isn+1 {
 					p.established = true
 				} else {
-					panic("")
+					println("server recv invalid ack", p.isn, tcp.AckNumber())
 				}
 			default:
 			}
