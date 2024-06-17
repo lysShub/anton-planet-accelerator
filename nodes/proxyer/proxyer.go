@@ -26,6 +26,8 @@ type Proxyer struct {
 
 	sender conn.Conn
 
+	stats nodes.PLStats
+
 	closeErr errorx.CloseErr
 }
 
@@ -104,9 +106,17 @@ func (p *Proxyer) uplinkService() (_ error) {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
+		p.stats.ID(int(hdr.ID))
 
 		switch hdr.Kind {
 		case proto.PingProxyer:
+			err = p.conn.WriteToAddrPort(pkt, caddr)
+			if err != nil {
+				return p.close(err)
+			}
+		case proto.PackLossUplink:
+			pkt.Append(proto.PL(p.stats.PL()).Encode()...)
+
 			err = p.conn.WriteToAddrPort(pkt, caddr)
 			if err != nil {
 				return p.close(err)
