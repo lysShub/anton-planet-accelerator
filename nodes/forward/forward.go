@@ -97,19 +97,19 @@ func (f *Forward) Serve() error {
 
 func (f *Forward) recvService() (err error) {
 	var (
-		pkt  = packet.Make(f.config.MaxRecvBuffSize)
-		hdr  = proto.Header{}
-		head = 64
+		pkt = packet.Make(f.config.MaxRecvBuffSize)
+		hdr = proto.Header{}
 	)
 
 	for {
-		paddr, err := f.conn.ReadFromAddrPort(pkt.Sets(head, 0xffff))
+		paddr, err := f.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
 		if err != nil {
 			return f.close(err)
 		} else if pkt.Data() == 0 {
 			continue
 		}
 
+		head := pkt.Head()
 		if err := hdr.Decode(pkt); err != nil {
 			f.config.logger.Error(err.Error(), errorx.Trace(err))
 			continue
