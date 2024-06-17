@@ -38,7 +38,7 @@ func Bind(laddr netip.AddrPort) (*TCPConn, error) {
 func (c *TCPConn) WriteToAddrPort(b *packet.Packet, to netip.AddrPort) (err error) {
 	t := c.eps.get(to)
 	if t == nil {
-		t = c.eps.set(to, newPseudoTCP(to, c, true))
+		t = c.eps.set(to, NewPseudoTCP(to, c, true))
 	}
 
 	return t.Send(b)
@@ -58,7 +58,7 @@ func (c *TCPConn) ReadFromAddrPort(b *packet.Packet) (netip.AddrPort, error) {
 
 	t := c.eps.get(raddr)
 	if t == nil {
-		t = c.eps.set(raddr, newPseudoTCP(raddr, c, false))
+		t = c.eps.set(raddr, NewPseudoTCP(raddr, c, false))
 	}
 	if err := t.Recv(b); err != nil {
 		return netip.AddrPort{}, err
@@ -76,21 +76,21 @@ func (c *TCPConn) Close() error              { return c.raw.Close() }
 
 type eps struct {
 	mu  sync.RWMutex
-	eps map[netip.AddrPort]*pseudoTCP
+	eps map[netip.AddrPort]*PseudoTCP
 }
 
 func neweps() *eps {
 	return &eps{
-		eps: map[netip.AddrPort]*pseudoTCP{},
+		eps: map[netip.AddrPort]*PseudoTCP{},
 	}
 }
 
-func (e *eps) get(raddr netip.AddrPort) *pseudoTCP {
+func (e *eps) get(raddr netip.AddrPort) *PseudoTCP {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.eps[raddr]
 }
-func (e *eps) set(raddr netip.AddrPort, ep *pseudoTCP) *pseudoTCP {
+func (e *eps) set(raddr netip.AddrPort, ep *PseudoTCP) *PseudoTCP {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.eps[raddr] = ep

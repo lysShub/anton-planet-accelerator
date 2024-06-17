@@ -6,17 +6,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/packet"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-// pseudoTCP
+// PseudoTCP
 // 1. 握手不用等待，大概发就行了
 // 2. 没有重传、流控
 // 3. 忽略 Close
-type pseudoTCP struct {
+type PseudoTCP struct {
 	conn         *TCPConn
 	raddr        netip.Addr
 	dial         bool
@@ -24,6 +25,7 @@ type pseudoTCP struct {
 	pseudo1      uint16
 
 	mu          sync.RWMutex
+	cached      *packet.Packet
 	alive       bool
 	established bool
 	isn, ian    uint32
@@ -31,8 +33,8 @@ type pseudoTCP struct {
 	rcvNxt      uint32
 }
 
-func newPseudoTCP(remote netip.AddrPort, conn *TCPConn, dial bool) *pseudoTCP {
-	var p = &pseudoTCP{
+func NewPseudoTCP(remote netip.AddrPort, conn *TCPConn, dial bool) *PseudoTCP {
+	var p = &PseudoTCP{
 		conn:  conn,
 		raddr: remote.Addr(),
 		dial:  dial,
@@ -54,13 +56,20 @@ func newPseudoTCP(remote netip.AddrPort, conn *TCPConn, dial bool) *pseudoTCP {
 	return p
 }
 
-func (p *pseudoTCP) Send(pkt *packet.Packet) error {
+func (p *PseudoTCP) Send(pkt *packet.Packet) error {
+	if pkt == nil || pkt.Data() == 0 {
+		return nil
+	}
+
 	if p.handshaked() {
-		return p.send(pkt, header.TCPFlagPsh, 0, 0)
+		return p.send(pkt, header.TCPFlagPsh|header.TCPFlagAck, 0, 0)
 	} else {
-		// todo: cache this packet
 		p.mu.Lock()
 		defer p.mu.Unlock()
+		if p.cached == nil {
+			p.cached = pkt.Clone()
+		}
+
 		if p.dial {
 			if p.ian == 0 {
 				return p.send(packet.Make(64), header.TCPFlagSyn, p.isn, 0)
@@ -76,7 +85,7 @@ func (p *pseudoTCP) Send(pkt *packet.Packet) error {
 	return nil
 }
 
-func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags, seq, ack uint32) error {
+func (p *PseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags, seq, ack uint32) error {
 	if seq == 0 {
 		seq = p.sndNxt
 	}
@@ -115,35 +124,47 @@ func (p *pseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags, seq, ack uin
 	return nil
 }
 
-func (p *pseudoTCP) Recv(tcp *packet.Packet) error {
+func (p *PseudoTCP) Recv(tcp *packet.Packet) error {
+	if tcp == nil || tcp.Data() < header.TCPMinimumSize {
+		return nil
+	}
+
 	if p.handshaked() {
 		return p.recv(tcp)
 	} else {
+		hdr := header.TCP(tcp.Bytes())
 		defer tcp.SetData(0)
-		tcp := header.TCP(tcp.Bytes())
-
 		p.mu.Lock()
 		defer p.mu.Unlock()
+
 		if p.dial {
-			if tcp.Flags() == header.TCPFlagSyn|header.TCPFlagAck {
+			if hdr.Flags() == header.TCPFlagSyn|header.TCPFlagAck {
 				if p.ian == 0 {
-					p.ian = tcp.SequenceNumber()
+					p.ian = hdr.SequenceNumber()
 				}
-				return p.send(packet.Make(64), header.TCPFlagAck, p.isn+1, p.ian+1)
+				if err := p.send(packet.Make(64), header.TCPFlagAck, p.isn+1, p.ian+1); err != nil {
+					return err
+				}
+
+				p.established = true
+				defer func() { p.cached = nil }()
+				return p.send(p.cached, header.TCPFlagPsh|header.TCPFlagAck, 0, 0)
 			}
 		} else {
-			switch tcp.Flags() {
+			switch hdr.Flags() {
 			case header.TCPFlagSyn:
 				if p.ian == 0 {
-					p.ian = tcp.SequenceNumber()
+					p.ian = hdr.SequenceNumber()
 				}
 				p.rcvNxt = p.ian + 1
 				return p.send(packet.Make(64), header.TCPFlagSyn|header.TCPFlagAck, p.isn, p.ian+1)
 			case header.TCPFlagAck:
-				if tcp.AckNumber() == p.isn+1 {
+				if hdr.AckNumber() == p.isn+1 {
 					p.established = true
 				} else {
-					println("server recv invalid ack", p.isn, tcp.AckNumber())
+					if debug.Debug() {
+						println("server recv invalid ack", p.isn, hdr.AckNumber())
+					}
 				}
 			default:
 			}
@@ -152,7 +173,7 @@ func (p *pseudoTCP) Recv(tcp *packet.Packet) error {
 	return nil
 }
 
-func (p *pseudoTCP) recv(tcp *packet.Packet) error {
+func (p *PseudoTCP) recv(tcp *packet.Packet) error {
 	hdr := header.TCP(tcp.Bytes())
 	tcp.DetachN(int(hdr.DataOffset()))
 
@@ -168,21 +189,21 @@ func (p *pseudoTCP) recv(tcp *packet.Packet) error {
 	return nil
 }
 
-func (p *pseudoTCP) handshaked() bool {
-	if p.mu.TryRLock() {
-		defer p.mu.RUnlock()
-	}
+func (p *PseudoTCP) handshaked() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.established
 }
 
 const keepalive time.Duration = time.Second * 15
 
-func (p *pseudoTCP) keepalive() {
+func (p *PseudoTCP) keepalive() {
 	p.mu.RLock()
 	alive := p.alive
 	p.mu.RUnlock()
 
 	if !alive {
+		// todo: rst
 		p.conn.eps.del(netip.AddrPortFrom(p.raddr, p.rport))
 	} else {
 		p.mu.Lock()
@@ -190,8 +211,4 @@ func (p *pseudoTCP) keepalive() {
 		p.mu.Unlock()
 		time.AfterFunc(keepalive, p.keepalive)
 	}
-}
-
-func (p *pseudoTCP) close(cause error) error {
-	panic(cause)
 }
