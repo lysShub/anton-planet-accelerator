@@ -69,7 +69,7 @@ func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
 	}
 	var err error
 
-	c.conn, err = conn.Bind(nodes.Network, "")
+	c.conn, err = conn.Bind(nodes.ProxyerNetwork, "")
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -218,7 +218,7 @@ func (c *Client) captureService() (_ error) {
 			if err != nil {
 				if errorx.Temporary(err) {
 					if debug.Debug() {
-						c.config.logger.Warn("not mapping", slog.String("session", s.String()))
+						// c.config.logger.Warn("not mapping", slog.String("session", s.String()))
 					}
 					pass = false
 				} else {
