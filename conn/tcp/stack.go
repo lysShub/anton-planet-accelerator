@@ -107,7 +107,7 @@ func (p *PseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags, seq, ack uin
 		AckNum:        ack,
 		DataOffset:    header.TCPMinimumSize,
 		Flags:         flags,
-		WindowSize:    2048, // todo: calc it
+		WindowSize:    0xffff, // todo: calc it
 		Checksum:      0,
 		UrgentPointer: 0,
 	})
