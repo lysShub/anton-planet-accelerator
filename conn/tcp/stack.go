@@ -123,7 +123,7 @@ func (p *pseudoTCP) Recv(tcp *packet.Packet) error {
 		if p.dial {
 			if tcp.Flags() == header.TCPFlagSyn|header.TCPFlagAck {
 				if !p.acked {
-					p.rcvNxt = tcp.AckNumber() + 1
+					p.rcvNxt = tcp.SequenceNumber() + 1
 					p.acked = true
 				}
 				return p.send(packet.Make(64), header.TCPFlagAck)
