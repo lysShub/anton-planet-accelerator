@@ -87,6 +87,8 @@ func (p *Proxyer) uplinkService() (_ error) {
 		caddr, err := p.conn.ReadFromAddrPort(pkt.Sets(0, 0xffff))
 		if err != nil {
 			return p.close(err)
+		} else if pkt.Data() == 0 {
+			continue
 		}
 
 		if err := hdr.Decode(pkt); err != nil {
@@ -128,6 +130,8 @@ func (p *Proxyer) donwlinkService() (_ error) {
 		_, err := p.sender.ReadFromAddrPort(pkt.Sets(0, 0xffff))
 		if err != nil {
 			return p.close(err)
+		} else if pkt.Data() == 0 {
+			continue
 		}
 
 		if err := hdr.Decode(pkt); err != nil {

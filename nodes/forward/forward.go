@@ -106,6 +106,8 @@ func (f *Forward) recvService() (err error) {
 		paddr, err := f.conn.ReadFromAddrPort(pkt.Sets(head, 0xffff))
 		if err != nil {
 			return f.close(err)
+		} else if pkt.Data() == 0 {
+			continue
 		}
 
 		if err := hdr.Decode(pkt); err != nil {

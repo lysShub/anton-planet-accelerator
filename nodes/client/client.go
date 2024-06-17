@@ -320,6 +320,8 @@ func (c *Client) injectServic() (_ error) {
 		paddr, err := c.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
 		if err != nil {
 			return c.close(err)
+		} else if pkt.Data() == 0 {
+			continue
 		}
 
 		if err := hdr.Decode(pkt); err != nil {

@@ -45,8 +45,6 @@ func (c *TCPConn) WriteToAddrPort(b *packet.Packet, to netip.AddrPort) (err erro
 }
 
 func (c *TCPConn) ReadFromAddrPort(b *packet.Packet) (netip.AddrPort, error) {
-	head, data := b.Head(), b.Data()
-
 	rip, err := c.raw.ReadFromAddr(b)
 	if err != nil {
 		return netip.AddrPort{}, err
@@ -64,11 +62,7 @@ func (c *TCPConn) ReadFromAddrPort(b *packet.Packet) (netip.AddrPort, error) {
 		return netip.AddrPort{}, err
 	}
 
-	if b.Data() == 0 {
-		return c.ReadFromAddrPort(b.Sets(head, data))
-	} else {
-		return raddr, nil
-	}
+	return raddr, nil
 }
 
 func (c *TCPConn) LocalAddr() netip.AddrPort { return c.laddr }

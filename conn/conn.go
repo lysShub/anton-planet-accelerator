@@ -13,8 +13,9 @@ import (
 
 // datagram connect, refer net.UDPConn
 type Conn interface {
-	// read transport layer payload
+	// read transport layer payload, notice maybe return 0 length data
 	ReadFromAddrPort(*packet.Packet) (netip.AddrPort, error)
+
 	// write transport layer payload
 	WriteToAddrPort(*packet.Packet, netip.AddrPort) error
 
