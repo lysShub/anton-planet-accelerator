@@ -17,7 +17,7 @@ func main() {
 	fmt.Println(debug.Debug())
 
 	config := proxyer.Config{
-		MaxRecvBuff: 1536,
+		MaxRecvBuff: 2048,
 	}
 
 	// forward := netip.MustParseAddrPort("45.150.236.6:19986") // 东京

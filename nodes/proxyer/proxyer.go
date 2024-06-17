@@ -86,7 +86,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 	)
 
 	for {
-		caddr, err := p.conn.ReadFromAddrPort(pkt.Sets(0, 0xffff))
+		caddr, err := p.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
 		if err != nil {
 			return p.close(err)
 		} else if pkt.Data() == 0 {
@@ -137,7 +137,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 	)
 
 	for {
-		_, err := p.sender.ReadFromAddrPort(pkt.Sets(0, 0xffff))
+		_, err := p.sender.ReadFromAddrPort(pkt.Sets(64, 0xffff))
 		if err != nil {
 			return p.close(err)
 		} else if pkt.Data() == 0 {

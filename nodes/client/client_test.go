@@ -31,7 +31,7 @@ func TestXxxx(t *testing.T) {
 	fmt.Println(debug.Debug(), accelerator.Warthunder)
 
 	config := &client.Config{
-		MaxRecvBuff: 1536,
+		MaxRecvBuff: 2048,
 		TcpMssDelta: -64,
 		PcapPath:    "client.pcap",
 	}

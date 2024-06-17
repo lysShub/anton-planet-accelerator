@@ -18,7 +18,7 @@ func main() {
 	t := test.T()
 
 	config := &forward.Config{
-		MaxRecvBuffSize: 1536,
+		MaxRecvBuffSize: 2048,
 	}
 
 	f, err := forward.New(":19986", config)
