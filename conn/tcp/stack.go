@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lysShub/netkit/debug"
@@ -26,11 +27,12 @@ type PseudoTCP struct {
 
 	mu          sync.RWMutex
 	cached      *packet.Packet
-	alive       bool
 	established bool
 	isn, ian    uint32
-	sndNxt      uint32
-	rcvNxt      uint32
+
+	magic  uint32 // use for keepalive
+	sndNxt atomic.Uint32
+	rcvNxt atomic.Uint32
 }
 
 func NewPseudoTCP(remote netip.AddrPort, conn *TCPConn, dial bool) *PseudoTCP {
@@ -50,7 +52,7 @@ func NewPseudoTCP(remote netip.AddrPort, conn *TCPConn, dial bool) *PseudoTCP {
 	for p.isn == 0 {
 		p.isn = rand.Uint32()
 	}
-	p.sndNxt = p.isn
+	p.sndNxt.Store(p.isn)
 
 	time.AfterFunc(keepalive, p.keepalive)
 	return p
@@ -87,10 +89,10 @@ func (p *PseudoTCP) Send(pkt *packet.Packet) error {
 
 func (p *PseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags, seq, ack uint32) error {
 	if seq == 0 {
-		seq = p.sndNxt
+		seq = p.sndNxt.Load()
 	}
 	if ack == 0 {
-		ack = p.rcvNxt
+		ack = p.rcvNxt.Load()
 	}
 	if !flags.Contains(header.TCPFlagAck) {
 		ack = 0
@@ -105,7 +107,7 @@ func (p *PseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags, seq, ack uin
 		AckNum:        ack,
 		DataOffset:    header.TCPMinimumSize,
 		Flags:         flags,
-		WindowSize:    2048,
+		WindowSize:    2048, // todo: calc it
 		Checksum:      0,
 		UrgentPointer: 0,
 	})
@@ -118,8 +120,7 @@ func (p *PseudoTCP) send(pkt *packet.Packet, flags header.TCPFlags, seq, ack uin
 	}
 
 	if payload > 0 {
-		p.sndNxt += uint32(payload)
-		p.alive = true
+		p.sndNxt.Add(uint32(payload))
 	}
 	return nil
 }
@@ -156,7 +157,6 @@ func (p *PseudoTCP) Recv(tcp *packet.Packet) error {
 				if p.ian == 0 {
 					p.ian = hdr.SequenceNumber()
 				}
-				p.rcvNxt = p.ian + 1
 				return p.send(packet.Make(64), header.TCPFlagSyn|header.TCPFlagAck, p.isn, p.ian+1)
 			case header.TCPFlagAck:
 				if hdr.AckNumber() == p.isn+1 {
@@ -178,13 +178,8 @@ func (p *PseudoTCP) recv(tcp *packet.Packet) error {
 	tcp.DetachN(int(hdr.DataOffset()))
 
 	nxt := hdr.SequenceNumber() + uint32(len(hdr.Payload()))
-
-	if p.mu.TryLock() {
-		defer p.mu.Unlock()
-	}
-	if nxt > p.rcvNxt {
-		p.alive = true
-		p.rcvNxt = nxt
+	if nxt > p.rcvNxt.Load() {
+		p.rcvNxt.Store(nxt)
 	}
 	return nil
 }
@@ -198,17 +193,12 @@ func (p *PseudoTCP) handshaked() bool {
 const keepalive time.Duration = time.Second * 15
 
 func (p *PseudoTCP) keepalive() {
-	p.mu.RLock()
-	alive := p.alive
-	p.mu.RUnlock()
-
-	if !alive {
+	newMagic := (p.sndNxt.Load() &^ p.rcvNxt.Load())
+	if p.magic == newMagic {
 		// todo: rst
 		p.conn.eps.del(netip.AddrPortFrom(p.raddr, p.rport))
 	} else {
-		p.mu.Lock()
-		p.alive = false
-		p.mu.Unlock()
+		p.magic = newMagic
 		time.AfterFunc(keepalive, p.keepalive)
 	}
 }
