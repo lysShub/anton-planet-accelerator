@@ -14,6 +14,10 @@ type StatsSet struct {
 	conns map[netip.AddrPort]*stats
 }
 
+func NewStatsSet() *StatsSet {
+	return &StatsSet{conns: map[netip.AddrPort]*stats{}}
+}
+
 func (ss *StatsSet) Stats(caddr netip.AddrPort) *stats {
 	ss.mu.RLock()
 	s := ss.conns[caddr]

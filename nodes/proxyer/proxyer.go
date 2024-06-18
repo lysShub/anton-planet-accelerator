@@ -35,6 +35,7 @@ func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) 
 	var p = &Proxyer{
 		config:  config.init(),
 		forward: forward,
+		ss:      NewStatsSet(),
 	}
 	err := nodes.DisableOffload(config.logger)
 	if err != nil {
