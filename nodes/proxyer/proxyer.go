@@ -102,14 +102,6 @@ func (p *Proxyer) uplinkService() (_ error) {
 			ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
 			require.True(test.T(), ok)
 		}
-		p.ss.Stats(caddr).Uplink(int(hdr.ID))
-
-		hdr.Client = caddr
-		hdr.ID = 0 // proxyer-forward之间的丢包还没加上
-		if err := hdr.Encode(pkt); err != nil {
-			p.config.logger.Warn(err.Error(), errorx.Trace(err))
-			continue
-		}
 
 		switch hdr.Kind {
 		case proto.PingProxyer:
@@ -126,6 +118,16 @@ func (p *Proxyer) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		default:
+			p.ss.Stats(caddr).Uplink(int(hdr.ID))
+			print(hdr.ID, ", ")
+
+			hdr.Client = caddr
+			hdr.ID = 0 // proxyer-forward之间的丢包还没加上
+			if err := hdr.Encode(pkt); err != nil {
+				p.config.logger.Warn(err.Error(), errorx.Trace(err))
+				continue
+			}
+
 			err = p.sender.WriteToAddrPort(pkt, p.forward)
 			if err != nil {
 				return p.close(err)
