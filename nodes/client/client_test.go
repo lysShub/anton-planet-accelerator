@@ -11,16 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jftuga/geodist"
 	accelerator "github.com/lysShub/anton-planet-accelerator"
 	"github.com/lysShub/anton-planet-accelerator/nodes/client"
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/netkit/debug"
 	"github.com/stretchr/testify/require"
-)
-
-var (
-	Moscow = geodist.Coord{Lon: 37.56, Lat: 55.75}
 )
 
 func TestXxxx(t *testing.T) {

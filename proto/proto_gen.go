@@ -16,9 +16,9 @@ func _() {
 	_ = x[_kind_end-6]
 }
 
-const _Kind_name = "_kind_startDataPingProxyerPingForwardPackLossUplink_kind_end"
+const _Kind_name = "_kind_startDataPingClientProxyerPingProxyerForwardPackLossUplink_kind_end"
 
-var _Kind_index = [...]uint8{0, 11, 15, 26, 37, 51, 60}
+var _Kind_index = [...]uint8{0, 11, 15, 32, 50, 64, 73}
 
 func (i Kind) String() string {
 	i -= 1

@@ -26,7 +26,7 @@ type Proxyer struct {
 
 	sender conn.Conn
 
-	stats *nodes.PLStats
+	ss *StatsSet
 
 	closeErr errorx.CloseErr
 }
@@ -35,7 +35,6 @@ func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) 
 	var p = &Proxyer{
 		config:  config.init(),
 		forward: forward,
-		stats:   nodes.NewPLStats(proto.MaxID),
 	}
 	err := nodes.DisableOffload(config.logger)
 	if err != nil {
@@ -102,12 +101,14 @@ func (p *Proxyer) uplinkService() (_ error) {
 			ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
 			require.True(test.T(), ok)
 		}
+		p.ss.Stats(caddr).Uplink(int(hdr.ID))
+
 		hdr.Client = caddr
+		hdr.ID = 0 // proxyer-forward之间的丢包还没加上
 		if err := hdr.Encode(pkt); err != nil {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
-		p.stats.ID(int(hdr.ID))
 
 		switch hdr.Kind {
 		case proto.PingProxyer:
@@ -116,7 +117,8 @@ func (p *Proxyer) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		case proto.PackLossUplink:
-			pkt.Append(proto.PL(p.stats.PL(nodes.PLScale)).Encode()...)
+			pl := p.ss.Stats(caddr).UplinkPL()
+			pkt.Append(pl.Encode()...)
 
 			err = p.conn.WriteToAddrPort(pkt, caddr)
 			if err != nil {
@@ -149,7 +151,8 @@ func (p *Proxyer) donwlinkService() (_ error) {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
-		pkt.AttachN(proto.HeaderSize)
+		hdr.ID = uint8(p.ss.Stats(hdr.Client).Downlink())
+		hdr.Encode(pkt) // todo: optimize
 
 		err = p.conn.WriteToAddrPort(pkt, hdr.Client)
 		if err != nil {

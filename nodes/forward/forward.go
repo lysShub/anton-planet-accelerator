@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/netip"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/lysShub/anton-planet-accelerator/conn"
@@ -27,18 +26,14 @@ type Forward struct {
 
 	conn conn.Conn
 
-	connStatsMu sync.RWMutex
-	connStats   map[netip.AddrPort]*stats
+	// // 用于记录 proxyer-forward 之间的丢包, 暂时没用
+	// connStatsMu sync.RWMutex
+	// connStats   map[netip.AddrPort]*stats
 
 	linkMu sync.RWMutex
 	links  map[link]*Link
 
 	closeErr errorx.CloseErr
-}
-
-type stats struct {
-	pl *nodes.PLStats
-	id atomic.Uint32
 }
 
 type link struct {
@@ -57,9 +52,8 @@ func (l link) String() string {
 
 func New(addr string, config *Config) (*Forward, error) {
 	var f = &Forward{
-		config:    config.init(),
-		connStats: map[netip.AddrPort]*stats{},
-		links:     map[link]*Link{},
+		config: config.init(),
+		links:  map[link]*Link{},
 	}
 	err := nodes.DisableOffload(config.logger)
 	if err != nil {
@@ -114,17 +108,10 @@ func (f *Forward) recvService() (err error) {
 			f.config.logger.Error(err.Error(), errorx.Trace(err))
 			continue
 		}
-		stats := f.statsRecv(hdr.Client, hdr.ID)
 
 		switch hdr.Kind {
 		case proto.PingForward:
 			err := f.conn.WriteToAddrPort(pkt.SetHead(head), paddr)
-			if err != nil {
-				return f.close(err)
-			}
-		case proto.PackLossUplink:
-			pkt.SetHead(head).Append(proto.PL(stats.pl.PL(nodes.PLScale)).Encode()...)
-			err = f.conn.WriteToAddrPort(pkt, paddr)
 			if err != nil {
 				return f.close(err)
 			}
@@ -133,6 +120,8 @@ func (f *Forward) recvService() (err error) {
 				ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
 				require.True(test.T(), ok)
 			}
+
+			// f.statsRecv(paddr, hdr.ID)
 
 			t := header.TCP(pkt.Bytes()) // only get port, tcp/udp is same
 			link := link{header: hdr, processPort: t.SourcePort(), serverPort: t.DestinationPort()}
@@ -194,62 +183,66 @@ func (f *Forward) delLink(link link) error {
 	return nil
 }
 
-func (f *Forward) statsRecv(caddr netip.AddrPort, id uint8) *stats {
-	f.connStatsMu.RLock()
-	s, has := f.connStats[caddr]
-	f.connStatsMu.RUnlock()
-	if !has {
-		s = &stats{
-			pl: nodes.NewPLStats(proto.MaxID),
-		}
-		f.connStatsMu.Lock()
-		f.connStats[caddr] = s
-		f.connStatsMu.Unlock()
-	}
-	s.pl.ID(int(id))
-	return s
-}
-
-func (f *Forward) sendService(raw *Link) (_ error) {
+func (f *Forward) sendService(link *Link) (_ error) {
 	var (
 		pkt = packet.Make(f.config.MaxRecvBuffSize)
 		hdr = proto.Header{}
 	)
 
 	for {
-		if err := raw.Recv(pkt.Sets(64, 0xffff)); err != nil {
-			return f.delLink(raw.Link())
+		if err := link.Recv(pkt.Sets(64, 0xffff)); err != nil {
+			return f.delLink(link.Link())
 		}
 
-		// todo: optimize header
 		if err := hdr.Decode(pkt); err != nil {
 			f.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
-		hdr.ID = f.statsDown(hdr.Client)
-		if err := hdr.Encode(pkt); err != nil {
-			f.config.logger.Warn(err.Error(), errorx.Trace(err))
-			continue
-		}
+		// hdr.ID = f.statsDown(link.Proxyer())
+		// if err := hdr.Encode(pkt); err != nil {
+		// 	f.config.logger.Warn(err.Error(), errorx.Trace(err))
+		// 	continue
+		// }
 
-		err := f.conn.WriteToAddrPort(pkt, raw.Proxyer())
+		err := f.conn.WriteToAddrPort(pkt, link.Proxyer())
 		if err != nil {
 			return f.close(err)
 		}
 	}
 }
 
-func (f *Forward) statsDown(caddr netip.AddrPort) uint8 {
-	f.connStatsMu.RLock()
-	s, has := f.connStats[caddr]
-	f.connStatsMu.RUnlock()
-	if !has {
-		s = &stats{
-			pl: nodes.NewPLStats(nodes.PLScale),
-		}
-		f.connStatsMu.Lock()
-		f.connStats[caddr] = s
-		f.connStatsMu.Unlock()
-	}
-	return uint8(s.id.Add(1))
-}
+// type stats struct {
+// 	pl *nodes.PLStats
+// 	id atomic.Uint32
+// }
+
+// func (f *Forward) statsRecv(paddr netip.AddrPort, id uint8) *stats {
+// 	f.connStatsMu.RLock()
+// 	s, has := f.connStats[paddr]
+// 	f.connStatsMu.RUnlock()
+// 	if !has {
+// 		s = &stats{
+// 			pl: nodes.NewPLStats(proto.MaxID),
+// 		}
+// 		f.connStatsMu.Lock()
+// 		f.connStats[paddr] = s
+// 		f.connStatsMu.Unlock()
+// 	}
+// 	s.pl.ID(int(id))
+// 	return s
+// }
+
+// func (f *Forward) statsDown(paddr netip.AddrPort) uint8 {
+// 	f.connStatsMu.RLock()
+// 	s, has := f.connStats[paddr]
+// 	f.connStatsMu.RUnlock()
+// 	if !has {
+// 		s = &stats{
+// 			pl: nodes.NewPLStats(nodes.PLScale),
+// 		}
+// 		f.connStatsMu.Lock()
+// 		f.connStats[paddr] = s
+// 		f.connStatsMu.Unlock()
+// 	}
+// 	return uint8(s.id.Add(1))
+// }

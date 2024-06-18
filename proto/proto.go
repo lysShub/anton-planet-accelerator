@@ -13,7 +13,7 @@ import (
 type Header struct {
 	Kind   Kind
 	Proto  uint8
-	ID     uint8
+	ID     uint8 // Data id
 	Client netip.AddrPort
 	Server netip.Addr
 }
@@ -44,9 +44,9 @@ const (
 
 	_kind_start Kind = iota
 	Data
-	PingProxyer
-	PingForward
-	PackLossUplink
+	PingProxyer    // client-proxyer   之间的rtt
+	PingForward    // proxyer-forward 之间的rtt
+	PackLossUplink // client-proxyer  之间的丢包
 	_kind_end
 )
 
