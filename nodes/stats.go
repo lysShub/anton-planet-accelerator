@@ -114,7 +114,7 @@ func (p *PLStats) ID(id int) {
 	i := p.li.Expand(id)
 	if i < 0 {
 		if debug.Debug() {
-			println("loose id")
+			println("loose id", id)
 		}
 		return
 	}
@@ -167,7 +167,7 @@ func (p *PLStats2) ID(id int) (recved bool) {
 	i := p.li.Expand(id)
 	if i < 0 {
 		if debug.Debug() {
-			println("loose id")
+			println("loose id", id)
 		}
 		return
 	}

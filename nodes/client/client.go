@@ -144,9 +144,9 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 	} {
 		var pkt = packet.Make(64 + proto.HeaderSize)
 		var hdr = proto.Header{
-			Kind:  kind,
-			Proto: syscall.IPPROTO_TCP,
-			// ID:     uint8(c.id.Add(1)),
+			Kind:   kind,
+			Proto:  syscall.IPPROTO_TCP,
+			ID:     0,
 			Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0),
 			Server: netip.IPv4Unspecified(),
 		}
@@ -239,9 +239,9 @@ func (c *Client) captureService() (_ error) {
 			fatun.UpdateTcpMssOption(ip.Bytes(), c.config.TcpMssDelta)
 		}
 		if c.pcap != nil {
-			head := ip.Head()
-			c.pcap.WriteIP(ip.SetHead(0).Bytes())
-			ip.SetHead(head)
+			head1 := ip.Head()
+			c.pcap.WriteIP(ip.SetHead(head).Bytes())
+			ip.SetHead(head1)
 		}
 
 		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
@@ -328,7 +328,6 @@ func (c *Client) injectServic() (_ error) {
 			c.config.logger.Error(err.Error(), errorx.Trace(err))
 			continue
 		}
-		c.pl.ID(int(hdr.ID))
 
 		if hdr.Kind != proto.Data {
 			c.handleMsg(msg{
@@ -337,6 +336,7 @@ func (c *Client) injectServic() (_ error) {
 			})
 			continue
 		}
+
 		{
 			e := eee{server: hdr.Server, proxyer: paddr}
 			if !maps[e] {
@@ -345,6 +345,7 @@ func (c *Client) injectServic() (_ error) {
 				println("recv probe", e.server.String(), dstPort, hdr.Proto, e.proxyer.String())
 			}
 		}
+		c.pl.ID(int(hdr.ID))
 		if c.route.Add(hdr.Server, paddr) {
 			// c.config.logger.Info("route probe", slog.String("server", hdr.Server.String()), slog.String("proxyer", paddr.String()))
 		}

@@ -120,8 +120,10 @@ func (p *Proxyer) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		default:
-			p.ss.Stats(caddr).Uplink(int(hdr.ID))
-			print(hdr.ID, ", ")
+			if hdr.Kind == proto.Data {
+				p.ss.Stats(caddr).Uplink(int(hdr.ID))
+				print(hdr.ID, ", ")
+			}
 
 			hdr.Client = caddr
 			hdr.ID = 0 // proxyer-forward之间的丢包还没加上
