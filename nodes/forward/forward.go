@@ -198,11 +198,8 @@ func (f *Forward) sendService(link *Link) (_ error) {
 			f.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
-		// hdr.ID = f.statsDown(link.Proxyer())
-		// if err := hdr.Encode(pkt); err != nil {
-		// 	f.config.logger.Warn(err.Error(), errorx.Trace(err))
-		// 	continue
-		// }
+		hdr.ID = 0 // f.statsDown(link.Proxyer())
+		hdr.Encode(pkt)
 
 		err := f.conn.WriteToAddrPort(pkt, link.Proxyer())
 		if err != nil {
