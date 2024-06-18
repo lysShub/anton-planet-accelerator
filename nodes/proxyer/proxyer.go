@@ -105,11 +105,13 @@ func (p *Proxyer) uplinkService() (_ error) {
 
 		switch hdr.Kind {
 		case proto.PingProxyer:
+			hdr.Encode(pkt)
 			err = p.conn.WriteToAddrPort(pkt, caddr)
 			if err != nil {
 				return p.close(err)
 			}
 		case proto.PackLossUplink:
+			hdr.Encode(pkt)
 			pl := p.ss.Stats(caddr).UplinkPL()
 			pkt.Append(pl.Encode()...)
 
@@ -123,10 +125,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 
 			hdr.Client = caddr
 			hdr.ID = 0 // proxyer-forward之间的丢包还没加上
-			if err := hdr.Encode(pkt); err != nil {
-				p.config.logger.Warn(err.Error(), errorx.Trace(err))
-				continue
-			}
+			hdr.Encode(pkt)
 
 			err = p.sender.WriteToAddrPort(pkt, p.forward)
 			if err != nil {
