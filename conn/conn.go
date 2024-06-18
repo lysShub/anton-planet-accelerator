@@ -3,6 +3,7 @@ package conn
 import (
 	"net"
 	"net/netip"
+	"reflect"
 
 	"github.com/lysShub/anton-planet-accelerator/conn/tcp"
 	"github.com/lysShub/anton-planet-accelerator/conn/udp"
@@ -24,7 +25,7 @@ type Conn interface {
 	Close() error
 }
 
-func Bind(network string, laddr string) (Conn, error) {
+func Bind(network string, laddr string) (conn Conn, err error) {
 	addr, err := resolveAddr(laddr)
 	if err != nil {
 		return nil, err
@@ -41,6 +42,11 @@ func Bind(network string, laddr string) (Conn, error) {
 		addr = netip.AddrPortFrom(entry.Addr, addr.Port())
 	}
 
+	defer func() {
+		if conn != nil && reflect.ValueOf(conn).IsNil() {
+			conn = nil
+		}
+	}()
 	switch network {
 	case "udp", "udp4":
 		return udp.Bind(addr)
