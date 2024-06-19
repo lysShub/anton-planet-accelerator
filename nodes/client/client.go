@@ -260,10 +260,6 @@ func (c *Client) captureService() (_ error) {
 			}
 		}
 
-		if ip.Data()+20+8 > 1500 {
-			println("too-big", ip.Data(), hdr.String())
-		}
-
 		if err = c.conn.WriteToAddrPort(ip, next); err != nil {
 			return c.close(err)
 		}
@@ -284,7 +280,7 @@ func (c *Client) routeProbe(pkt *packet.Packet) (netip.AddrPort, error) {
 		hdr.Encode(pkt)
 
 		if c.routeProbeCache[hdr.Server] > 3 {
-			// println("drop probe")
+			println("drop probe")
 			return netip.AddrPort{}, nil
 		}
 		c.routeProbeCache[hdr.Server]++

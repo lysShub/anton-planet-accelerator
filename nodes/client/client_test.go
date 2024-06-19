@@ -33,7 +33,7 @@ func TestXxxx(t *testing.T) {
 	os.Remove(config.PcapPath)
 
 	proxyers := []netip.AddrPort{
-		// netip.MustParseAddrPort("8.137.91.200:19986"), // 东京
+		netip.MustParseAddrPort("8.137.91.200:19986"),  // 洛杉矶
 		netip.MustParseAddrPort("39.106.138.35:19986"), // 莫斯科
 	}
 
