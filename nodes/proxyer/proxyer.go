@@ -187,7 +187,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 		}
 
 		f := p.fs.Get(faddr)
-		if f != nil {
+		if f == nil {
 			p.config.logger.Warn("can't get forward")
 			continue
 		}

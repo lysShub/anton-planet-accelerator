@@ -19,16 +19,16 @@ func NewForwards() *Forwards {
 }
 
 // todo: 根据地理标签获取
-func (f *Forwards) Get(addr netip.AddrPort) *Forward {
+func (f *Forwards) Get(faddr netip.AddrPort) *Forward {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	return f.fs[addr]
+	return f.fs[faddr]
 }
 
-func (f *Forwards) Add(forward netip.AddrPort) {
+func (f *Forwards) Add(faddr netip.AddrPort) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.fs[forward] = &Forward{}
+	f.fs[faddr] = &Forward{donwlinkPL: nodes.NewPLStats(proto.MaxID)}
 }
 
 type Forward struct {
