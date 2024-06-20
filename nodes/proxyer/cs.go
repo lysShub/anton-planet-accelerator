@@ -27,7 +27,7 @@ func (cs *Clients) Client(client netip.AddrPort) *Client {
 	c := cs.cs[client]
 	cs.mu.RUnlock()
 
-	if c != nil {
+	if c == nil {
 		c = &Client{uplinkPL: nodes.NewPLStats(proto.MaxID)}
 
 		cs.mu.Lock()
