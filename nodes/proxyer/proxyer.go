@@ -38,6 +38,8 @@ func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) 
 		forward: forward,
 		fs:      NewForwards(),
 	}
+	p.fs.Add(forward) // todo: temporary
+
 	err := nodes.DisableOffload(config.logger)
 	if err != nil {
 		return nil, err
