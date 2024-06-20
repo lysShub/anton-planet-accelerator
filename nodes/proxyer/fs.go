@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/proto"
@@ -28,12 +29,24 @@ func (f *Forwards) Get(faddr netip.AddrPort) *Forward {
 func (f *Forwards) Add(faddr netip.AddrPort) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.fs[faddr] = &Forward{donwlinkPL: nodes.NewPLStats(proto.MaxID)}
+	f.fs[faddr] = &Forward{
+		faddr:      faddr,
+		donwlinkPL: nodes.NewPLStats(proto.MaxID),
+	}
 }
 
 type Forward struct {
-	uplinkID   atomic.Uint32  // proxyer-->forward inc id
+	faddr netip.AddrPort
+
+	uplinkID atomic.Uint32 // proxyer-->forward inc id
+
+	uplinkPL atomic.Uintptr // proxyer-->forward pl
+
 	donwlinkPL *nodes.PLStats // forward-->proxyer pl
+}
+
+func (f *Forward) Addr() netip.AddrPort {
+	return f.faddr
 }
 
 func (f *Forward) UplinkID() uint8 {
@@ -46,4 +59,14 @@ func (f *Forward) DownlinkID(id uint8) {
 
 func (f *Forward) DownlinkPL() proto.PL {
 	return proto.PL(f.donwlinkPL.PL(nodes.PLScale))
+}
+
+func (f *Forward) UplinkPL() proto.PL {
+	tmp := f.uplinkPL.Load()
+	return *(*proto.PL)(unsafe.Pointer(&tmp))
+}
+
+func (f *Forward) SetUplinkPL(pl proto.PL) {
+	tmp := *(*uintptr)(unsafe.Pointer(&pl))
+	f.uplinkPL.Store(tmp)
 }

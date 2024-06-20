@@ -36,8 +36,7 @@ func (ps *Proxyers) Proxyer(paddr netip.AddrPort) *Proxyer {
 }
 
 type Proxyer struct {
-	uplinkPL *nodes.PLStats
-
+	uplinkPL   *nodes.PLStats
 	downlinkID atomic.Uint32
 }
 

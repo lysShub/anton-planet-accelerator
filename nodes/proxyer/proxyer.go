@@ -97,6 +97,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 			continue
 		}
 
+		head := pkt.Head()
 		if err := hdr.Decode(pkt); err != nil {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
@@ -104,56 +105,80 @@ func (p *Proxyer) uplinkService() (_ error) {
 
 		switch hdr.Kind {
 		case proto.PingProxyer:
-			hdr.Encode(pkt)
-			err = p.conn.WriteToAddrPort(pkt, caddr)
+			err = p.conn.WriteToAddrPort(pkt.SetHead(head), caddr)
 			if err != nil {
 				return p.close(err)
 			}
 		case proto.PackLossClientUplink:
-			hdr.Encode(pkt)
 			pl := p.cs.Client(caddr).UplinkPL()
-			pkt.Append(pl.Encode()...)
+			pkt.SetHead(head).Append(pl.Encode()...)
 
 			err = p.conn.WriteToAddrPort(pkt, caddr)
 			if err != nil {
 				return p.close(err)
 			}
 		case proto.PackLossProxyerDownlink:
-			hdr.Encode(pkt)
 			f := p.fs.Get(p.forward)
 			if f == nil {
 				p.config.logger.Warn("can't get forward")
 				continue
 			}
-			pkt.Append(f.DownlinkPL().Encode()...)
+			pkt.SetHead(head).Append(f.DownlinkPL().Encode()...)
 
 			err = p.conn.WriteToAddrPort(pkt, caddr)
 			if err != nil {
 				return p.close(err)
 			}
-		case proto.Data, proto.PingForward, proto.PackLossProxyerUplink:
-			if hdr.Kind == proto.Data {
-				p.cs.Client(caddr).UplinkID(int(hdr.ID))
+		case proto.PackLossProxyerUplink:
+			f := p.fs.Get(p.forward)
+			if f == nil {
+				p.config.logger.Warn("can't get forward")
+				continue
+			}
+			pl := f.UplinkPL()
+			pkt.SetHead(head).Append(pl.Encode()...)
 
-				if debug.Debug() {
-					ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
-					require.True(test.T(), ok)
-				}
+			err = p.conn.WriteToAddrPort(pkt, caddr)
+			if err != nil {
+				return p.close(err)
+			}
+		case proto.PingForward:
+			hdr.Client = caddr
+			hdr.Encode(pkt)
+
+			err = p.sender.WriteToAddrPort(pkt, p.forward)
+			if err != nil {
+				return p.close(err)
+			}
+		case proto.Data:
+			p.cs.Client(caddr).UplinkID(int(hdr.ID))
+			if debug.Debug() {
+				ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
+				require.True(test.T(), ok)
 			}
 
 			f := p.fs.Get(p.forward)
 			if f == nil {
-				p.config.logger.Warn("can't get forward")
+				p.config.logger.Warn("can't get forward", slog.String("forwar", p.forward.String()))
 				continue
 			}
 
 			hdr.Client = caddr
 			hdr.ID = f.UplinkID()
 			hdr.Encode(pkt)
-
-			err = p.sender.WriteToAddrPort(pkt, p.forward)
+			err = p.sender.WriteToAddrPort(pkt, f.Addr())
 			if err != nil {
 				return p.close(err)
+			}
+
+			if hdr.ID == 0xff {
+				hdr.Kind = proto.PackLossProxyerUplink
+				hdr.Encode(pkt.SetData(0))
+
+				err = p.sender.WriteToAddrPort(pkt, f.Addr())
+				if err != nil {
+					return p.close(err)
+				}
 			}
 		default:
 			panic("")
@@ -175,30 +200,49 @@ func (p *Proxyer) donwlinkService() (_ error) {
 			continue
 		}
 
+		head := pkt.Head()
 		if err := hdr.Decode(pkt); err != nil {
 			p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
+
 		switch hdr.Kind {
-		case proto.Data, proto.PingForward, proto.PackLossProxyerUplink:
+		case proto.Data:
+			f := p.fs.Get(faddr)
+			if f == nil {
+				p.config.logger.Warn("can't get forward", slog.String("forwar", p.forward.String()))
+				continue
+			}
+			f.DownlinkID(hdr.ID)
+
+			hdr.ID = p.cs.Client(hdr.Client).DownlinkID()
+			hdr.Encode(pkt)
+
+			err = p.conn.WriteToAddrPort(pkt.SetHead(head), hdr.Client)
+			if err != nil {
+				return p.close(err)
+			}
+		case proto.PackLossProxyerUplink:
+			f := p.fs.Get(faddr)
+			if f == nil {
+				p.config.logger.Warn("can't get forward", slog.String("forwar", p.forward.String()), errorx.Trace(nil))
+				continue
+			}
+
+			var pl proto.PL
+			if err := pl.Decode(pkt.Bytes()); err != nil {
+				p.config.logger.Warn(err.Error(), errorx.Trace(nil))
+			} else {
+				f.SetUplinkPL(pl)
+			}
+		case proto.PingForward:
+			err = p.conn.WriteToAddrPort(pkt.SetHead(head), hdr.Client)
+			if err != nil {
+				return p.close(err)
+			}
 		default:
 			p.config.logger.Warn("invalid kind from forward", slog.String("kind", hdr.Kind.String()), slog.String("forward", faddr.String()))
 			continue
-		}
-
-		f := p.fs.Get(faddr)
-		if f == nil {
-			p.config.logger.Warn("can't get forward")
-			continue
-		}
-		f.DownlinkID(hdr.ID)
-
-		hdr.ID = p.cs.Client(hdr.Client).DownlinkID()
-		hdr.Encode(pkt)
-
-		err = p.conn.WriteToAddrPort(pkt, hdr.Client)
-		if err != nil {
-			return p.close(err)
 		}
 	}
 }
