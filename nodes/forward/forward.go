@@ -5,6 +5,7 @@ package forward
 
 import (
 	"log/slog"
+	"math/rand"
 	"net/netip"
 	"sync"
 	"time"
@@ -190,6 +191,10 @@ func (f *Forward) sendService(link *Link) (_ error) {
 		}
 		hdr.ID = f.ps.Proxyer(link.Proxyer()).DownlinkID()
 		hdr.Encode(pkt) // todo: optimize
+
+		if rand.Int()%100 == 99 {
+			continue // PackLossProxyerDownlink
+		}
 
 		err := f.conn.WriteToAddrPort(pkt, link.Proxyer())
 		if err != nil {

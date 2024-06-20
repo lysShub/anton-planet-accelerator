@@ -4,10 +4,13 @@
 package client
 
 import (
+	"fmt"
 	"log/slog"
+	"math"
+	"math/rand"
 	"net/netip"
-	"os"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -24,6 +27,7 @@ import (
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/netkit/pcap"
 	"github.com/pkg/errors"
+	"golang.org/x/net/context"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -37,13 +41,11 @@ type Client struct {
 	capture *divert.Handle
 	inbound divert.Address
 
-	conn conn.Conn
-	id   atomic.Uint32
-	pl   *nodes.PLStats
+	conn       conn.Conn
+	uplinkId   atomic.Uint32
+	downlinkPL *nodes.PLStats
 
-	proxyers        []netip.AddrPort
-	routeProbeCache map[netip.Addr]int8 // 有的数据包只有上行，避免这种数据包一直被route probe
-	route           *route
+	proxyers []netip.AddrPort
 
 	msgRecver chan msg
 
@@ -60,12 +62,10 @@ type msg struct {
 
 func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
 	var c = &Client{
-		config:          config.init(),
-		pl:              nodes.NewPLStats(proto.MaxID),
-		proxyers:        proxyers,
-		routeProbeCache: map[netip.Addr]int8{},
-		route:           NewRoute(proxyers[0]),
-		msgRecver:       make(chan msg, 8),
+		config:     config.init(),
+		downlinkPL: nodes.NewPLStats(proto.MaxID),
+		proxyers:   proxyers,
+		msgRecver:  make(chan msg, 8),
 	}
 	var err error
 
@@ -132,16 +132,62 @@ func (c *Client) Start() {
 }
 
 type NetworkStats struct {
-	PingProxyer      time.Duration
-	PingForward      time.Duration
-	PackLossUplink   proto.PL
-	PackLossDownlink proto.PL
+	PingProxyer             time.Duration
+	PingForward             time.Duration
+	PackLossClientUplink    proto.PL
+	PackLossClientDownlink  proto.PL
+	PackLossProxyerUplink   proto.PL
+	PackLossProxyerDownlink proto.PL
 }
 
-func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
-	for _, kind := range []proto.Kind{
+func (n *NetworkStats) String() string {
+	var s = &strings.Builder{}
+
+	col1 := []string{"ping", "pl↑", "pl↓"}
+	col2 := []string{n.strdur(n.PingProxyer), n.PackLossClientUplink.String(), n.PackLossClientUplink.String()}
+
+	p2 := time.Duration(0)
+	if n.PingForward > n.PingProxyer {
+		p2 = n.PingForward - n.PingProxyer
+	}
+	col3 := []string{n.strdur(p2), n.PackLossClientDownlink.String(), n.PackLossProxyerDownlink.String()}
+
+	const size = 6
+	for i := range 3 {
+		n.writefix(s, col1[i], size)
+		n.writefix(s, col2[i], size)
+		n.writefix(s, col3[i], size)
+		s.WriteRune('\n')
+	}
+	return s.String()
+}
+
+func (*NetworkStats) writefix(w *strings.Builder, str string, size int) {
+	w.WriteString(str)
+	n := size - len([]rune(str))
+	for i := 0; i < n; i++ {
+		w.WriteByte(' ')
+	}
+}
+
+func (*NetworkStats) strdur(dur time.Duration) string {
+	ss := dur.Seconds() * 1000
+
+	s1 := int(math.Round(ss))
+	s2 := int((ss - float64(s1)) * 10)
+	if s2 < 0 {
+		s2 = 0
+	}
+	return fmt.Sprintf("%d.%d", s1, s2)
+}
+
+func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err error) {
+	kinds := []proto.Kind{
 		proto.PingProxyer, proto.PingForward, proto.PackLossClientUplink,
-	} {
+		proto.PackLossProxyerUplink, proto.PackLossProxyerDownlink,
+	}
+
+	for _, kind := range kinds {
 		var pkt = packet.Make(64 + proto.HeaderSize)
 		var hdr = proto.Header{
 			Kind:   kind,
@@ -153,41 +199,49 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 		if err := hdr.Encode(pkt); err != nil {
 			return nil, c.close(err)
 		}
-		if err := c.conn.WriteToAddrPort(pkt, c.route.ActiveProxyer()); err != nil {
+		if err := c.conn.WriteToAddrPort(pkt, c.proxyers[0]); err != nil {
 			return nil, c.close(err)
 		}
 	}
 	start := time.Now()
 
-	var stats NetworkStats
+	stats = &NetworkStats{}
 	var timer = time.After(timeout)
-	for i := 0; i < 4; {
-		for {
-			select {
-			case <-timer:
-				return &stats, errors.WithStack(os.ErrDeadlineExceeded)
-			case msg := <-c.msgRecver:
-				switch msg.header.Kind {
-				case proto.PingProxyer:
-					stats.PingProxyer = time.Since(start)
-				case proto.PingForward:
-					stats.PingForward = time.Since(start)
-				case proto.PackLossClientUplink:
-					err := stats.PackLossUplink.Decode(msg.data)
-					if err != nil {
-						return &stats, err
-					}
-				default:
-					c.msgRecver <- msg
-					continue
+	for i := 0; i < len(kinds); {
+		select {
+		case <-timer:
+			err = context.DeadlineExceeded
+			goto next
+		case msg := <-c.msgRecver:
+			switch msg.header.Kind {
+			case proto.PingProxyer:
+				stats.PingProxyer = time.Since(start)
+			case proto.PingForward:
+				stats.PingForward = time.Since(start)
+			case proto.PackLossClientUplink:
+				err := stats.PackLossClientUplink.Decode(msg.data)
+				if err != nil {
+					return stats, err
 				}
-				i++
+			case proto.PackLossProxyerUplink:
+				err := stats.PackLossClientUplink.Decode(msg.data)
+				if err != nil {
+					return stats, err
+				}
+
+			default:
+				c.msgRecver <- msg
+				continue
 			}
+			i++
 		}
 	}
-	stats.PackLossDownlink = proto.PL(c.pl.PL(nodes.PLScale))
+next:
 
-	return &stats, nil
+	pl := c.downlinkPL.PL(nodes.PLScale)
+	stats.PackLossClientDownlink = proto.PL(pl)
+
+	return stats, err
 }
 
 func (c *Client) captureService() (_ error) {
@@ -217,9 +271,9 @@ func (c *Client) captureService() (_ error) {
 			name, err := c.mapping.Name(s.Src, uint8(s.Proto))
 			if err != nil {
 				if errorx.Temporary(err) {
-					if debug.Debug() {
-						// c.config.logger.Warn("not mapping", slog.String("session", s.String()))
-					}
+					// if debug.Debug() {
+					// 	c.config.logger.Warn("not mapping", slog.String("session", s.String()))
+					// }
 					pass = false
 				} else {
 					return c.close(err)
@@ -247,63 +301,18 @@ func (c *Client) captureService() (_ error) {
 		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
 		hdr.Proto = uint8(s.Proto)
 		hdr.Server = s.Dst.Addr()
-		hdr.ID = uint8(c.id.Add(1))
+		hdr.ID = uint8(c.uplinkId.Add(1))
 		hdr.Encode(ip)
 
-		next := c.route.Next(hdr.Server)
-		if !next.IsValid() {
-			next, err = c.routeProbe(ip)
-			if err != nil {
-				return c.close(err)
-			} else if !next.IsValid() {
-				continue
-			}
+		if rand.Int()%100 == 99 {
+			continue // PackLossClientUplink
 		}
 
-		if err = c.conn.WriteToAddrPort(ip, next); err != nil {
+		if err = c.conn.WriteToAddrPort(ip, c.proxyers[0]); err != nil {
 			return c.close(err)
 		}
 	}
 }
-
-func (c *Client) routeProbe(pkt *packet.Packet) (netip.AddrPort, error) {
-	switch len(c.proxyers) {
-	case 0:
-		return netip.AddrPort{}, errors.New("not proxyer")
-	case 1:
-		return c.proxyers[0], nil
-	default:
-		var hdr proto.Header
-		hdr.Decode(pkt)
-		hdr.ID = 0
-		dstPort := header.TCP(pkt.Bytes()).DestinationPort()
-		hdr.Encode(pkt)
-
-		if c.routeProbeCache[hdr.Server] > 3 {
-			println("drop probe")
-			return netip.AddrPort{}, nil
-		}
-		c.routeProbeCache[hdr.Server]++
-
-		for _, e := range c.proxyers {
-
-			println("send probe", hdr.Server.String(), hdr.Proto, dstPort, e.String())
-
-			err := c.conn.WriteToAddrPort(pkt, e)
-			if err != nil {
-				return netip.AddrPort{}, err
-			}
-		}
-		return netip.AddrPort{}, nil
-	}
-}
-
-type eee struct {
-	server  netip.Addr
-	proxyer netip.AddrPort
-}
-
-var maps = map[eee]bool{}
 
 func (c *Client) injectServic() (_ error) {
 	var (
@@ -333,18 +342,8 @@ func (c *Client) injectServic() (_ error) {
 			continue
 		}
 
-		{
-			e := eee{server: hdr.Server, proxyer: paddr}
-			if !maps[e] {
-				maps[e] = true
-				dstPort := header.TCP(pkt.Bytes()).DestinationPort()
-				println("recv probe", e.server.String(), dstPort, hdr.Proto, e.proxyer.String())
-			}
-		}
-		c.pl.ID(int(hdr.ID))
-		if c.route.Add(hdr.Server, paddr) {
-			// c.config.logger.Info("route probe", slog.String("server", hdr.Server.String()), slog.String("proxyer", paddr.String()))
-		}
+		c.downlinkPL.ID(int(hdr.ID))
+
 		if hdr.Proto == uint8(header.TCPProtocolNumber) {
 			fatun.UpdateTcpMssOption(pkt.Bytes(), c.config.TcpMssDelta)
 		}

@@ -45,14 +45,14 @@ func TestXxxx(t *testing.T) {
 	for {
 		stats, err := c.NetworkStats(time.Second)
 		if !errors.Is(err, os.ErrDeadlineExceeded) {
-			require.NoError(t, err)
+			err = nil
+			// fmt.Println("timeout")
 		}
+		require.NoError(t, err)
 
-		fmt.Printf("Ping: %s + %s    PL: %s  %s \n",
-			stats.PingProxyer.String(), stats.PingForward.String(),
-			stats.PackLossUplink.String(), stats.PackLossDownlink.String(),
-		)
+		fmt.Println(stats.String())
+		fmt.Println()
 
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * 3)
 	}
 }

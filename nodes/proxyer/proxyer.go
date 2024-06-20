@@ -5,6 +5,7 @@ package proxyer
 
 import (
 	"log/slog"
+	"math/rand"
 	"net/netip"
 
 	"github.com/lysShub/anton-planet-accelerator/conn"
@@ -166,6 +167,11 @@ func (p *Proxyer) uplinkService() (_ error) {
 			hdr.Client = caddr
 			hdr.ID = f.UplinkID()
 			hdr.Encode(pkt)
+
+			if rand.Int()%100 == 99 {
+				continue // PackLossProxyerUplink
+			}
+
 			err = p.sender.WriteToAddrPort(pkt, f.Addr())
 			if err != nil {
 				return p.close(err)
@@ -217,6 +223,10 @@ func (p *Proxyer) donwlinkService() (_ error) {
 
 			hdr.ID = p.cs.Client(hdr.Client).DownlinkID()
 			hdr.Encode(pkt)
+
+			if rand.Int()%100 == 99 {
+				continue // PackLossClientDownlink
+			}
 
 			err = p.conn.WriteToAddrPort(pkt.SetHead(head), hdr.Client)
 			if err != nil {
