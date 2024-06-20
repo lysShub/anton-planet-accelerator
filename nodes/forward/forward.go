@@ -4,7 +4,6 @@
 package forward
 
 import (
-	"fmt"
 	"log/slog"
 	"net/netip"
 	"sync"
@@ -25,10 +24,7 @@ type Forward struct {
 	config *Config
 
 	conn conn.Conn
-
-	// // 用于记录 proxyer-forward 之间的丢包, 暂时没用
-	// connStatsMu sync.RWMutex
-	// connStats   map[netip.AddrPort]*stats
+	ps   *Proxyers
 
 	linkMu sync.RWMutex
 	links  map[link]*Link
@@ -36,23 +32,10 @@ type Forward struct {
 	closeErr errorx.CloseErr
 }
 
-type link struct {
-	header      proto.Header
-	processPort uint16
-	serverPort  uint16
-}
-
-func (l link) String() string {
-	return fmt.Sprintf(
-		"{Client:%s,Proto:%d,ProcessPort:%d,Server:%s}",
-		l.header.Client.String(), l.header.Proto, l.processPort,
-		netip.AddrPortFrom(l.header.Server, l.serverPort),
-	)
-}
-
 func New(addr string, config *Config) (*Forward, error) {
 	var f = &Forward{
 		config: config.init(),
+		ps:     NewProxyers(),
 		links:  map[link]*Link{},
 	}
 	err := nodes.DisableOffload(config.logger)
@@ -115,13 +98,20 @@ func (f *Forward) recvService() (err error) {
 			if err != nil {
 				return f.close(err)
 			}
+		case proto.PackLossProxyerUplink:
+			pkt.SetHead(head).Append(
+				f.ps.Proxyer(paddr).UplinkPL().Encode()...,
+			)
+			err := f.conn.WriteToAddrPort(pkt, paddr)
+			if err != nil {
+				return f.close(err)
+			}
 		case proto.Data:
 			if debug.Debug() {
 				ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
 				require.True(test.T(), ok)
 			}
-
-			// f.statsRecv(paddr, hdr.ID)
+			f.ps.Proxyer(paddr).UplinkID(hdr.ID)
 
 			t := header.TCP(pkt.Bytes()) // only get port, tcp/udp is same
 			link := link{header: hdr, processPort: t.SourcePort(), serverPort: t.DestinationPort()}
@@ -198,8 +188,8 @@ func (f *Forward) sendService(link *Link) (_ error) {
 			f.config.logger.Warn(err.Error(), errorx.Trace(err))
 			continue
 		}
-		hdr.ID = 0 // f.statsDown(link.Proxyer())
-		hdr.Encode(pkt)
+		hdr.ID = f.ps.Proxyer(link.Proxyer()).DownlinkID()
+		hdr.Encode(pkt) // todo: optimize
 
 		err := f.conn.WriteToAddrPort(pkt, link.Proxyer())
 		if err != nil {
@@ -207,39 +197,3 @@ func (f *Forward) sendService(link *Link) (_ error) {
 		}
 	}
 }
-
-// type stats struct {
-// 	pl *nodes.PLStats
-// 	id atomic.Uint32
-// }
-
-// func (f *Forward) statsRecv(paddr netip.AddrPort, id uint8) *stats {
-// 	f.connStatsMu.RLock()
-// 	s, has := f.connStats[paddr]
-// 	f.connStatsMu.RUnlock()
-// 	if !has {
-// 		s = &stats{
-// 			pl: nodes.NewPLStats(proto.MaxID),
-// 		}
-// 		f.connStatsMu.Lock()
-// 		f.connStats[paddr] = s
-// 		f.connStatsMu.Unlock()
-// 	}
-// 	s.pl.ID(int(id))
-// 	return s
-// }
-
-// func (f *Forward) statsDown(paddr netip.AddrPort) uint8 {
-// 	f.connStatsMu.RLock()
-// 	s, has := f.connStats[paddr]
-// 	f.connStatsMu.RUnlock()
-// 	if !has {
-// 		s = &stats{
-// 			pl: nodes.NewPLStats(nodes.PLScale),
-// 		}
-// 		f.connStatsMu.Lock()
-// 		f.connStats[paddr] = s
-// 		f.connStatsMu.Unlock()
-// 	}
-// 	return uint8(s.id.Add(1))
-// }

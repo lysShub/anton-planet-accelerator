@@ -20,7 +20,7 @@ func Test_Proto(t *testing.T) {
 
 	var pkt = packet.From([]byte(msg))
 	var h1 = Header{
-		Kind:   PackLossUplink,
+		Kind:   PackLossClientUplink,
 		Proto:  syscall.IPPROTO_UDP,
 		ID:     byte(rand.Uint32()),
 		Server: test.RandIP(),

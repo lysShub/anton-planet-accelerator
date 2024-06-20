@@ -140,7 +140,7 @@ type NetworkStats struct {
 
 func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 	for _, kind := range []proto.Kind{
-		proto.PingProxyer, proto.PingForward, proto.PackLossUplink,
+		proto.PingProxyer, proto.PingForward, proto.PackLossClientUplink,
 	} {
 		var pkt = packet.Make(64 + proto.HeaderSize)
 		var hdr = proto.Header{
@@ -172,7 +172,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (*NetworkStats, error) {
 					stats.PingProxyer = time.Since(start)
 				case proto.PingForward:
 					stats.PingForward = time.Since(start)
-				case proto.PackLossUplink:
+				case proto.PackLossClientUplink:
 					err := stats.PackLossUplink.Decode(msg.data)
 					if err != nil {
 						return &stats, err

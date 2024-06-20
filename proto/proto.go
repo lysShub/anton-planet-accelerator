@@ -44,9 +44,11 @@ const (
 
 	_kind_start Kind = iota
 	Data
-	PingProxyer    // client-proxyer   之间的rtt
-	PingForward    // proxyer-forward 之间的rtt
-	PackLossUplink // client-proxyer  之间的丢包
+	PingProxyer          // client-proxyer 之间的rtt
+	PingForward          // client-forward 之间的rtt
+	PackLossClientUplink // client-proxyer 之间的丢包
+	PackLossProxyerUplink
+	PackLossProxyerDownlink
 	_kind_end
 )
 

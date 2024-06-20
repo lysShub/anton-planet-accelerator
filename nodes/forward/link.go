@@ -4,6 +4,7 @@
 package forward
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/lysShub/anton-planet-accelerator/nodes"
+	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -23,6 +25,20 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
+
+type link struct {
+	header      proto.Header
+	processPort uint16
+	serverPort  uint16
+}
+
+func (l link) String() string {
+	return fmt.Sprintf(
+		"{Client:%s,Proto:%d,ProcessPort:%d,Server:%s}",
+		l.header.Client.String(), l.header.Proto, l.processPort,
+		netip.AddrPortFrom(l.header.Server, l.serverPort),
+	)
+}
 
 type Link struct {
 	raw *net.IPConn
