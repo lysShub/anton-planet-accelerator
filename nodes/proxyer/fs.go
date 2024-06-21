@@ -62,7 +62,7 @@ func (f *Forward) DownlinkPL() proto.PL {
 }
 
 func (f *Forward) UplinkPL() proto.PL {
-	tmp := f.uplinkPL.Load()
+	tmp := f.uplinkPL.Swap(0)
 	return *(*proto.PL)(unsafe.Pointer(&tmp))
 }
 

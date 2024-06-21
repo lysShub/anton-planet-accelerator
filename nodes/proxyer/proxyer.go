@@ -136,8 +136,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				p.config.logger.Warn("can't get forward")
 				continue
 			}
-			pl := f.UplinkPL()
-			pkt.SetHead(head).Append(pl.Encode()...)
+			pkt.SetHead(head).Append(f.UplinkPL().Encode()...)
 
 			err = p.conn.WriteToAddrPort(pkt, caddr)
 			if err != nil {
