@@ -219,7 +219,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 			}
 
 			var pl nodes.PL
-			if err := pl.Decode(pkt.Bytes()); err != nil {
+			if err := pl.Decode(pkt.DetachN(bvvd.Size).Bytes()); err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(nil))
 			} else {
 				f.SetUplinkPL(pl)
