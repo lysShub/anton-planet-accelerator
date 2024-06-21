@@ -4,14 +4,14 @@
 package forward
 
 import (
+	"errors"
 	"log/slog"
 	"math/rand"
-	"net/netip"
-	"sync"
-	"time"
+	"net"
 
 	"github.com/lysShub/anton-planet-accelerator/conn"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
+	"github.com/lysShub/anton-planet-accelerator/nodes/forward/links"
 	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
@@ -27,8 +27,7 @@ type Forward struct {
 	conn conn.Conn
 	ps   *Proxyers
 
-	linkMu sync.RWMutex
-	links  map[link]*Link
+	links *links.Links
 
 	closeErr errorx.CloseErr
 }
@@ -37,7 +36,7 @@ func New(addr string, config *Config) (*Forward, error) {
 	var f = &Forward{
 		config: config.init(),
 		ps:     NewProxyers(),
-		links:  map[link]*Link{},
+		links:  links.NewLinks(),
 	}
 	err := nodes.DisableOffload(config.logger)
 	if err != nil {
@@ -57,13 +56,9 @@ func (f *Forward) close(cause error) error {
 		if f.conn != nil {
 			errs = append(errs, f.conn.Close())
 		}
-
-		f.linkMu.Lock()
-		for _, e := range f.links {
-			errs = append(errs, e.Close())
+		if f.links != nil {
+			errs = append(errs, f.links.Close())
 		}
-		clear(f.links)
-		f.linkMu.Unlock()
 		return errs
 	})
 }
@@ -109,72 +104,32 @@ func (f *Forward) recvService() (err error) {
 			}
 		case proto.Data:
 			if debug.Debug() {
-				ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
-				require.True(test.T(), ok)
+				require.True(test.T(), nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server))
 			}
 			f.ps.Proxyer(paddr).UplinkID(hdr.ID)
 
-			t := header.TCP(pkt.Bytes()) // only get port, tcp/udp is same
-			link := link{header: hdr, processPort: t.SourcePort(), serverPort: t.DestinationPort()}
-			link.header.ID = 0
+			// only get port, tcp/udp is same
+			ep := links.NewEP(hdr, header.TCP(pkt.Bytes()))
 
-			f.linkMu.RLock()
-			raw, has := f.links[link]
-			f.linkMu.RUnlock()
-			if !has {
-				raw, err = f.addLink(link, paddr)
-				if err != nil {
+			link, new, err := f.links.Link(ep, paddr)
+			if err != nil {
+				return f.close(err)
+			} else if new {
+				f.config.logger.Info("new link", slog.String("endpoint", ep.String()))
+				go f.downlinkService(link)
+			}
+
+			if err = link.Send(pkt); err != nil {
+				if !errors.Is(err, net.ErrClosed) {
 					return f.close(err)
 				}
 			}
-
-			if err = raw.Send(pkt); err != nil {
-				f.delLink(raw.Link())
-			}
 		default:
-			f.config.logger.Warn("invalid header", slog.String("header", hdr.String()), slog.String("proxyer", paddr.String()))
 		}
 	}
 }
 
-func (f *Forward) addLink(link link, paddr netip.AddrPort) (*Link, error) {
-	raw, err := NewLink(link, paddr)
-	if err != nil {
-		return nil, f.close(err)
-	}
-	f.config.logger.Info("new link", slog.String("link", link.String()), slog.String("local", raw.LocalAddr().String()))
-
-	f.linkMu.Lock()
-	f.links[link] = raw
-	f.linkMu.Unlock()
-	go f.sendService(raw)
-
-	time.AfterFunc(durtion, func() { f.delLink(link) })
-	return raw, nil
-}
-
-const durtion = time.Minute
-
-func (f *Forward) delLink(link link) error {
-	f.linkMu.RLock()
-	l := f.links[link]
-	f.linkMu.RUnlock()
-	if l != nil {
-		if l.Alived() {
-			time.AfterFunc(durtion, func() { f.delLink(link) })
-		} else {
-			f.linkMu.Lock()
-			delete(f.links, link)
-			f.linkMu.Unlock()
-
-			f.config.logger.Info("delect link", slog.String("link", link.String()))
-			return l.Close()
-		}
-	}
-	return nil
-}
-
-func (f *Forward) sendService(link *Link) (_ error) {
+func (f *Forward) downlinkService(link *links.Link) (_ error) {
 	var (
 		pkt = packet.Make(f.config.MaxRecvBuffSize)
 		hdr = proto.Header{}
@@ -182,7 +137,12 @@ func (f *Forward) sendService(link *Link) (_ error) {
 
 	for {
 		if err := link.Recv(pkt.Sets(64, 0xffff)); err != nil {
-			return f.delLink(link.Link())
+			if errors.Is(err, net.ErrClosed) {
+				f.config.logger.Info("del link", slog.String("endpoint", link.Endpoint().String()))
+				return nil
+			} else {
+				return f.close(err)
+			}
 		}
 
 		if err := hdr.Decode(pkt); err != nil {
@@ -196,8 +156,7 @@ func (f *Forward) sendService(link *Link) (_ error) {
 			continue // PackLossProxyerDownlink
 		}
 
-		err := f.conn.WriteToAddrPort(pkt, link.Proxyer())
-		if err != nil {
+		if err := f.conn.WriteToAddrPort(pkt, link.Proxyer()); err != nil {
 			return f.close(err)
 		}
 	}

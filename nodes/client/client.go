@@ -43,13 +43,12 @@ type Client struct {
 	capture *divert.Handle
 	inbound divert.Address
 
-	conn       conn.Conn
-	uplinkId   atomic.Uint32
-	downlinkPL *nodes.PLStats
+	conn        conn.Conn
+	uplinkId    atomic.Uint32
+	downlinkPL  *nodes.PLStats
+	statsRecver chan msg
 
 	proxyers []netip.AddrPort
-
-	msgRecver chan msg
 
 	pcap *pcap.Pcap
 
@@ -64,10 +63,10 @@ type msg struct {
 
 func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
 	var c = &Client{
-		config:     config.init(),
-		downlinkPL: nodes.NewPLStats(proto.MaxID),
-		proxyers:   proxyers,
-		msgRecver:  make(chan msg, 8),
+		config:      config.init(),
+		downlinkPL:  nodes.NewPLStats(proto.MaxID),
+		proxyers:    proxyers,
+		statsRecver: make(chan msg, 8),
 	}
 	var err error
 
@@ -189,7 +188,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err e
 	}
 
 	select {
-	case <-c.msgRecver:
+	case <-c.statsRecver:
 	default:
 		break
 	}
@@ -219,7 +218,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err e
 		case <-timer:
 			err = context.DeadlineExceeded
 			goto next
-		case msg := <-c.msgRecver:
+		case msg := <-c.statsRecver:
 			switch msg.header.Kind {
 			case proto.PingProxyer:
 				stats.PingProxyer = time.Since(start)
@@ -241,7 +240,6 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err e
 					return stats, err
 				}
 			default:
-				fmt.Println(msg)
 			}
 			i++
 		}
@@ -379,7 +377,7 @@ func (c *Client) injectServic() (_ error) {
 
 func (c *Client) handleMsg(msg msg) {
 	select {
-	case c.msgRecver <- msg:
+	case c.statsRecver <- msg:
 	default:
 		c.config.logger.Warn("msgRecver filled")
 	}

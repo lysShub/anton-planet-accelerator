@@ -106,16 +106,14 @@ func (p *Proxyer) uplinkService() (_ error) {
 
 		switch hdr.Kind {
 		case proto.PingProxyer:
-			err = p.conn.WriteToAddrPort(pkt.SetHead(head), caddr)
-			if err != nil {
+			if err := p.conn.WriteToAddrPort(pkt.SetHead(head), caddr); err != nil {
 				return p.close(err)
 			}
 		case proto.PackLossClientUplink:
 			pl := p.cs.Client(caddr).UplinkPL()
 			pkt.SetHead(head).Append(pl.Encode()...)
 
-			err = p.conn.WriteToAddrPort(pkt, caddr)
-			if err != nil {
+			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
 		case proto.PackLossProxyerDownlink:
@@ -126,8 +124,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 			}
 			pkt.SetHead(head).Append(f.DownlinkPL().Encode()...)
 
-			err = p.conn.WriteToAddrPort(pkt, caddr)
-			if err != nil {
+			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
 		case proto.PackLossProxyerUplink:
@@ -138,8 +135,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 			}
 			pkt.SetHead(head).Append(f.UplinkPL().Encode()...)
 
-			err = p.conn.WriteToAddrPort(pkt, caddr)
-			if err != nil {
+			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
 		case proto.PingForward:
@@ -171,8 +167,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				continue // PackLossProxyerUplink
 			}
 
-			err = p.sender.WriteToAddrPort(pkt, f.Addr())
-			if err != nil {
+			if err = p.sender.WriteToAddrPort(pkt, f.Addr()); err != nil {
 				return p.close(err)
 			}
 
@@ -181,8 +176,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				hdr.Kind = proto.PackLossProxyerUplink
 				hdr.Encode(pkt.SetData(0))
 
-				err = p.sender.WriteToAddrPort(pkt, f.Addr())
-				if err != nil {
+				if err = p.sender.WriteToAddrPort(pkt, f.Addr()); err != nil {
 					return p.close(err)
 				}
 			}
@@ -228,8 +222,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 				continue // PackLossClientDownlink
 			}
 
-			err = p.conn.WriteToAddrPort(pkt.SetHead(head), hdr.Client)
-			if err != nil {
+			if err = p.conn.WriteToAddrPort(pkt.SetHead(head), hdr.Client); err != nil {
 				return p.close(err)
 			}
 		case proto.PackLossProxyerUplink:
@@ -246,8 +239,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 				f.SetUplinkPL(pl)
 			}
 		case proto.PingForward:
-			err = p.conn.WriteToAddrPort(pkt.SetHead(head), hdr.Client)
-			if err != nil {
+			if err = p.conn.WriteToAddrPort(pkt.SetHead(head), hdr.Client); err != nil {
 				return p.close(err)
 			}
 		default:
