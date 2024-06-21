@@ -142,7 +142,8 @@ func (p *Proxyer) uplinkService() (_ error) {
 		case bvvd.Data:
 			p.cs.Client(caddr).UplinkID(int(hdr.DataID()))
 			if debug.Debug() {
-				ok := nodes.ValidChecksum(pkt, hdr.Proto(), hdr.Server())
+				ok := nodes.ValidChecksum(pkt.DetachN(bvvd.Size), hdr.Proto(), hdr.Server())
+				pkt.AttachN(bvvd.Size)
 				require.True(test.T(), ok)
 			}
 
