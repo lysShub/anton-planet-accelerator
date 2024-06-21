@@ -62,7 +62,8 @@ func (f *Forward) DownlinkPL() proto.PL {
 }
 
 func (f *Forward) UplinkPL() proto.PL {
-	tmp := f.uplinkPL.Swap(0)
+	// todo: will cause PackLossProxyerUplink keep last value, when not data uplink transmit
+	tmp := f.uplinkPL.Load()
 	return *(*proto.PL)(unsafe.Pointer(&tmp))
 }
 

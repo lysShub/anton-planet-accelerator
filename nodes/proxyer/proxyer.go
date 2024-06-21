@@ -167,7 +167,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 			hdr.ID = f.UplinkID()
 			hdr.Encode(pkt)
 
-			if rand.Int()%100 == 99 {
+			if debug.Debug() && rand.Int()%100 == 99 {
 				continue // PackLossProxyerUplink
 			}
 
@@ -176,6 +176,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				return p.close(err)
 			}
 
+			// query proxyer-->forward pack loss
 			if hdr.ID == 0xff {
 				hdr.Kind = proto.PackLossProxyerUplink
 				hdr.Encode(pkt.SetData(0))
@@ -223,7 +224,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 			hdr.ID = p.cs.Client(hdr.Client).DownlinkID()
 			hdr.Encode(pkt)
 
-			if rand.Int()%100 == 99 {
+			if debug.Debug() && rand.Int()%100 == 99 {
 				continue // PackLossClientDownlink
 			}
 

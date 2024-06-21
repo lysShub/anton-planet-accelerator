@@ -192,7 +192,7 @@ func (f *Forward) sendService(link *Link) (_ error) {
 		hdr.ID = f.ps.Proxyer(link.Proxyer()).DownlinkID()
 		hdr.Encode(pkt) // todo: optimize
 
-		if rand.Int()%100 == 99 {
+		if debug.Debug() && rand.Int()%100 == 99 {
 			continue // PackLossProxyerDownlink
 		}
 

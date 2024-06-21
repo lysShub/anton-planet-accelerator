@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
+	"unsafe"
 
 	accelerator "github.com/lysShub/anton-planet-accelerator"
 	"github.com/lysShub/anton-planet-accelerator/conn"
@@ -143,31 +145,30 @@ type NetworkStats struct {
 func (n *NetworkStats) String() string {
 	var s = &strings.Builder{}
 
-	col1 := []string{"ping", "pl↑", "pl↓"}
-	col2 := []string{n.strdur(n.PingProxyer), n.PackLossClientUplink.String(), n.PackLossClientUplink.String()}
-
 	p2 := time.Duration(0)
 	if n.PingForward > n.PingProxyer {
 		p2 = n.PingForward - n.PingProxyer
 	}
-	col3 := []string{n.strdur(p2), n.PackLossClientDownlink.String(), n.PackLossProxyerDownlink.String()}
+	var elems = []string{
+		"ping", n.strdur(n.PingProxyer), n.strdur(p2),
+		"pl↑", n.PackLossClientUplink.String(), n.PackLossProxyerUplink.String(),
+		"pl↓", n.PackLossClientDownlink.String(), n.PackLossProxyerDownlink.String(),
+	}
 
 	const size = 6
-	for i := range 3 {
-		n.writefix(s, col1[i], size)
-		n.writefix(s, col2[i], size)
-		n.writefix(s, col3[i], size)
-		s.WriteRune('\n')
+	for i, e := range elems {
+		s.WriteString(e)
+
+		n := size - utf8.RuneCount(unsafe.Slice(unsafe.StringData(e), len(e)))
+		for i := 0; i < n; i++ {
+			s.WriteByte(' ')
+		}
+
+		if (i+1)%3 == 0 {
+			s.WriteByte('\n')
+		}
 	}
 	return s.String()
-}
-
-func (*NetworkStats) writefix(w *strings.Builder, str string, size int) {
-	w.WriteString(str)
-	n := size - len([]rune(str))
-	for i := 0; i < n; i++ {
-		w.WriteByte(' ')
-	}
 }
 
 func (*NetworkStats) strdur(dur time.Duration) string {
@@ -185,6 +186,12 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err e
 	kinds := []proto.Kind{
 		proto.PingProxyer, proto.PingForward, proto.PackLossClientUplink,
 		proto.PackLossProxyerUplink, proto.PackLossProxyerDownlink,
+	}
+
+	select {
+	case <-c.msgRecver:
+	default:
+		break
 	}
 
 	for _, kind := range kinds {
@@ -224,23 +231,24 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err e
 					return stats, err
 				}
 			case proto.PackLossProxyerUplink:
-				err := stats.PackLossClientUplink.Decode(msg.data)
+				err := stats.PackLossProxyerUplink.Decode(msg.data)
 				if err != nil {
 					return stats, err
 				}
-
+			case proto.PackLossProxyerDownlink:
+				err := stats.PackLossProxyerDownlink.Decode(msg.data)
+				if err != nil {
+					return stats, err
+				}
 			default:
-				c.msgRecver <- msg
-				continue
+				fmt.Println(msg)
 			}
 			i++
 		}
 	}
 next:
 
-	pl := c.downlinkPL.PL(nodes.PLScale)
-	stats.PackLossClientDownlink = proto.PL(pl)
-
+	stats.PackLossClientDownlink = proto.PL(c.downlinkPL.PL(nodes.PLScale))
 	return stats, err
 }
 
@@ -304,7 +312,7 @@ func (c *Client) captureService() (_ error) {
 		hdr.ID = uint8(c.uplinkId.Add(1))
 		hdr.Encode(ip)
 
-		if rand.Int()%100 == 99 {
+		if debug.Debug() && rand.Int()%100 == 99 {
 			continue // PackLossClientUplink
 		}
 
