@@ -232,7 +232,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 				continue
 			}
 
-			var pl proto.PL
+			var pl nodes.PL
 			if err := pl.Decode(pkt.Bytes()); err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(nil))
 			} else {

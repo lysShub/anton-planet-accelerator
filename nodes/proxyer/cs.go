@@ -62,8 +62,8 @@ func (c *Client) UplinkID(id int) {
 	c.alive.Add(1)
 }
 
-func (c *Client) UplinkPL() proto.PL {
-	return proto.PL(c.uplinkPL.PL(nodes.PLScale))
+func (c *Client) UplinkPL() nodes.PL {
+	return nodes.PL(c.uplinkPL.PL(nodes.PLScale))
 }
 
 func (c *Client) DownlinkID() uint8 {

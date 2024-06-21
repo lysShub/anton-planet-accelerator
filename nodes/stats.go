@@ -1,12 +1,15 @@
 package nodes
 
 import (
+	"fmt"
 	"math"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/rawsock/test"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -232,4 +235,40 @@ func (p *stats) PL(limit int) float64 {
 	}
 	pl := float64(n-p.count) / float64(n)
 	return pl
+}
+
+type PL float64
+
+func (p PL) Encode() (to []byte) {
+	if err := p.Valid(); err != nil {
+		panic(err)
+	}
+	return strconv.AppendFloat(nil, float64(p), 'f', 3, 64)
+}
+func (p *PL) Decode(from []byte) (err error) {
+	v, err := strconv.ParseFloat(string(from), 64)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	*p = PL(v)
+	return p.Valid()
+}
+func (p PL) Valid() error {
+	if p < 0 || 1 < p {
+		return errors.New("invalid pack loss")
+	}
+	return nil
+}
+func (p PL) String() string {
+	if p < 0.0001 {
+		return "00.0"
+	} else if p >= 1 {
+		return "--.-"
+	}
+
+	v := float64(p * 100)
+	v1 := int(v)
+	v2 := int((v - float64(v1)) * 10)
+
+	return fmt.Sprintf("%02d.%d", v1, v2)
 }

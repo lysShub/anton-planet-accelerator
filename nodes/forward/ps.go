@@ -44,8 +44,8 @@ func (p *Proxyer) UplinkID(id uint8) {
 	p.uplinkPL.ID(int(id))
 }
 
-func (p *Proxyer) UplinkPL() proto.PL {
-	return proto.PL(p.uplinkPL.PL(nodes.PLScale))
+func (p *Proxyer) UplinkPL() nodes.PL {
+	return nodes.PL(p.uplinkPL.PL(nodes.PLScale))
 }
 
 func (p *Proxyer) DownlinkID() uint8 {

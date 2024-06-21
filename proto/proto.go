@@ -3,7 +3,6 @@ package proto
 import (
 	"fmt"
 	"net/netip"
-	"strconv"
 	"syscall"
 
 	"github.com/lysShub/netkit/packet"
@@ -86,38 +85,4 @@ func (h *Header) Decode(from *packet.Packet) error {
 
 	from.DetachN(HeaderSize)
 	return nil
-}
-
-type PL float64
-
-func (p PL) Encode() (to []byte) {
-	if err := p.Valid(); err != nil {
-		panic(err)
-	}
-	return strconv.AppendFloat(nil, float64(p), 'f', 3, 64)
-}
-func (p *PL) Decode(from []byte) (err error) {
-	v, err := strconv.ParseFloat(string(from), 64)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	*p = PL(v)
-	return p.Valid()
-}
-func (p PL) Valid() error {
-	if p < 0 || 1 < p {
-		return errors.New("invalid pack loss")
-	}
-	return nil
-}
-func (p PL) String() string {
-	if p < 0.0001 {
-		return "00.0"
-	}
-
-	v := float64(p * 100)
-	v1 := int(v)
-	v2 := int((v - float64(v1)) * 10)
-
-	return fmt.Sprintf("%02d.%d", v1, v2)
 }

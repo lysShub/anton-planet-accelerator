@@ -4,18 +4,13 @@
 package client
 
 import (
-	"fmt"
 	"log/slog"
-	"math"
 	"math/rand"
 	"net/netip"
 	"slices"
-	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
-	"unicode/utf8"
-	"unsafe"
 
 	accelerator "github.com/lysShub/anton-planet-accelerator"
 	"github.com/lysShub/anton-planet-accelerator/conn"
@@ -132,55 +127,6 @@ func (c *Client) Start() {
 	go c.injectServic()
 }
 
-type NetworkStats struct {
-	PingProxyer             time.Duration
-	PingForward             time.Duration
-	PackLossClientUplink    proto.PL
-	PackLossClientDownlink  proto.PL
-	PackLossProxyerUplink   proto.PL
-	PackLossProxyerDownlink proto.PL
-}
-
-func (n *NetworkStats) String() string {
-	var s = &strings.Builder{}
-
-	p2 := time.Duration(0)
-	if n.PingForward > n.PingProxyer {
-		p2 = n.PingForward - n.PingProxyer
-	}
-	var elems = []string{
-		"ping", n.strdur(n.PingProxyer), n.strdur(p2),
-		"pl↑", n.PackLossClientUplink.String(), n.PackLossProxyerUplink.String(),
-		"pl↓", n.PackLossClientDownlink.String(), n.PackLossProxyerDownlink.String(),
-	}
-
-	const size = 6
-	for i, e := range elems {
-		s.WriteString(e)
-
-		n := size - utf8.RuneCount(unsafe.Slice(unsafe.StringData(e), len(e)))
-		for i := 0; i < n; i++ {
-			s.WriteByte(' ')
-		}
-
-		if (i+1)%3 == 0 {
-			s.WriteByte('\n')
-		}
-	}
-	return s.String()
-}
-
-func (*NetworkStats) strdur(dur time.Duration) string {
-	ss := dur.Seconds() * 1000
-
-	s1 := int(math.Round(ss))
-	s2 := int((ss - float64(s1)) * 10)
-	if s2 < 0 {
-		s2 = 0
-	}
-	return fmt.Sprintf("%d.%d", s1, s2)
-}
-
 func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err error) {
 	kinds := []proto.Kind{
 		proto.PingProxyer, proto.PingForward, proto.PackLossClientUplink,
@@ -211,13 +157,13 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err e
 	}
 	start := time.Now()
 
-	stats = &NetworkStats{}
+	stats = (&NetworkStats{}).init()
 	var timer = time.After(timeout)
 	for i := 0; i < len(kinds); {
 		select {
 		case <-timer:
 			err = context.DeadlineExceeded
-			goto next
+			i = len(kinds) // break
 		case msg := <-c.statsRecver:
 			switch msg.header.Kind {
 			case proto.PingProxyer:
@@ -240,13 +186,13 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err e
 					return stats, err
 				}
 			default:
+				return nil, errors.Errorf("unknown net statistics kind %s", msg.header.Kind)
 			}
 			i++
 		}
 	}
-next:
 
-	stats.PackLossClientDownlink = proto.PL(c.downlinkPL.PL(nodes.PLScale))
+	stats.PackLossClientDownlink = nodes.PL(c.downlinkPL.PL(nodes.PLScale))
 	return stats, err
 }
 
