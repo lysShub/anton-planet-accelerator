@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
-	"github.com/lysShub/anton-planet-accelerator/proto"
 )
 
 type Forwards struct {
@@ -31,7 +31,7 @@ func (f *Forwards) Add(faddr netip.AddrPort) {
 	defer f.mu.Unlock()
 	f.fs[faddr] = &Forward{
 		faddr:      faddr,
-		donwlinkPL: nodes.NewPLStats(proto.MaxID),
+		donwlinkPL: nodes.NewPLStats(bvvd.MaxID),
 	}
 }
 

@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
-	"github.com/lysShub/anton-planet-accelerator/proto"
 )
 
 type Clients struct {
@@ -28,7 +28,7 @@ func (cs *Clients) Client(client netip.AddrPort) *Client {
 	cs.mu.RUnlock()
 
 	if c == nil {
-		c = &Client{uplinkPL: nodes.NewPLStats(proto.MaxID)}
+		c = &Client{uplinkPL: nodes.NewPLStats(bvvd.MaxID)}
 
 		cs.mu.Lock()
 		cs.cs[client] = c

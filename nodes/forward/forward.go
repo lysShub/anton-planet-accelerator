@@ -9,10 +9,10 @@ import (
 	"math/rand"
 	"net"
 
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/conn"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/nodes/forward/links"
-	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -71,7 +71,7 @@ func (f *Forward) Serve() error {
 func (f *Forward) recvService() (err error) {
 	var (
 		pkt = packet.Make(f.config.MaxRecvBuffSize)
-		hdr = proto.Header{}
+		hdr = bvvd.Fields{}
 	)
 
 	for {
@@ -89,12 +89,12 @@ func (f *Forward) recvService() (err error) {
 		}
 
 		switch hdr.Kind {
-		case proto.PingForward:
+		case bvvd.PingForward:
 			err := f.conn.WriteToAddrPort(pkt.SetHead(head), paddr)
 			if err != nil {
 				return f.close(err)
 			}
-		case proto.PackLossProxyerUplink:
+		case bvvd.PackLossProxyerUplink:
 			pkt.SetHead(head).Append(
 				f.ps.Proxyer(paddr).UplinkPL().Encode()...,
 			)
@@ -102,11 +102,11 @@ func (f *Forward) recvService() (err error) {
 			if err != nil {
 				return f.close(err)
 			}
-		case proto.Data:
+		case bvvd.Data:
 			if debug.Debug() {
 				require.True(test.T(), nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server))
 			}
-			f.ps.Proxyer(paddr).UplinkID(hdr.ID)
+			f.ps.Proxyer(paddr).UplinkID(hdr.DataID)
 
 			// only get port, tcp/udp is same
 			ep := links.NewEP(hdr, header.TCP(pkt.Bytes()))
@@ -132,7 +132,6 @@ func (f *Forward) recvService() (err error) {
 func (f *Forward) downlinkService(link *links.Link) (_ error) {
 	var (
 		pkt = packet.Make(f.config.MaxRecvBuffSize)
-		hdr = proto.Header{}
 	)
 
 	for {
@@ -145,12 +144,8 @@ func (f *Forward) downlinkService(link *links.Link) (_ error) {
 			}
 		}
 
-		if err := hdr.Decode(pkt); err != nil {
-			f.config.logger.Warn(err.Error(), errorx.Trace(err))
-			continue
-		}
-		hdr.ID = f.ps.Proxyer(link.Proxyer()).DownlinkID()
-		hdr.Encode(pkt) // todo: optimize
+		id := f.ps.Proxyer(link.Proxyer()).DownlinkID()
+		bvvd.Bvvd(pkt.Bytes()).SetDataID(id)
 
 		if debug.Debug() && rand.Int()%100 == 99 {
 			continue // PackLossProxyerDownlink

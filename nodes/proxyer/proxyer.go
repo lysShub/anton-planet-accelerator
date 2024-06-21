@@ -8,9 +8,9 @@ import (
 	"math/rand"
 	"net/netip"
 
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/conn"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
-	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -87,7 +87,6 @@ func (p *Proxyer) Serve() error {
 func (p *Proxyer) uplinkService() (_ error) {
 	var (
 		pkt = packet.Make(p.config.MaxRecvBuff)
-		hdr = &proto.Header{}
 	)
 
 	for {
@@ -98,58 +97,52 @@ func (p *Proxyer) uplinkService() (_ error) {
 			continue
 		}
 
-		head := pkt.Head()
-		if err := hdr.Decode(pkt); err != nil {
-			p.config.logger.Warn(err.Error(), errorx.Trace(err))
-			continue
-		}
+		hdr := bvvd.Bvvd(pkt.Bytes())
 
-		switch hdr.Kind {
-		case proto.PingProxyer:
-			if err := p.conn.WriteToAddrPort(pkt.SetHead(head), caddr); err != nil {
+		switch kind := hdr.Kind(); kind {
+		case bvvd.PingProxyer:
+			if err := p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
-		case proto.PackLossClientUplink:
+		case bvvd.PackLossClientUplink:
 			pl := p.cs.Client(caddr).UplinkPL()
-			pkt.SetHead(head).Append(pl.Encode()...)
+			pkt.Append(pl.Encode()...)
 
 			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
-		case proto.PackLossProxyerDownlink:
+		case bvvd.PackLossProxyerDownlink:
 			f := p.fs.Get(p.forward)
 			if f == nil {
 				p.config.logger.Warn("can't get forward")
 				continue
 			}
-			pkt.SetHead(head).Append(f.DownlinkPL().Encode()...)
+			pkt.Append(f.DownlinkPL().Encode()...)
 
 			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
-		case proto.PackLossProxyerUplink:
+		case bvvd.PackLossProxyerUplink:
 			f := p.fs.Get(p.forward)
 			if f == nil {
 				p.config.logger.Warn("can't get forward")
 				continue
 			}
-			pkt.SetHead(head).Append(f.UplinkPL().Encode()...)
+			pkt.Append(f.UplinkPL().Encode()...)
 
 			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
-		case proto.PingForward:
-			hdr.Client = caddr
-			hdr.Encode(pkt)
-
+		case bvvd.PingForward:
+			hdr.SetClient(caddr)
 			err = p.sender.WriteToAddrPort(pkt, p.forward)
 			if err != nil {
 				return p.close(err)
 			}
-		case proto.Data:
-			p.cs.Client(caddr).UplinkID(int(hdr.ID))
+		case bvvd.Data:
+			p.cs.Client(caddr).UplinkID(int(hdr.DataID()))
 			if debug.Debug() {
-				ok := nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server)
+				ok := nodes.ValidChecksum(pkt, hdr.Proto(), hdr.Server())
 				require.True(test.T(), ok)
 			}
 
@@ -159,10 +152,8 @@ func (p *Proxyer) uplinkService() (_ error) {
 				continue
 			}
 
-			hdr.Client = caddr
-			hdr.ID = f.UplinkID()
-			hdr.Encode(pkt)
-
+			hdr.SetClient(caddr)
+			hdr.SetDataID(f.UplinkID())
 			if debug.Debug() && rand.Int()%100 == 99 {
 				continue // PackLossProxyerUplink
 			}
@@ -172,16 +163,16 @@ func (p *Proxyer) uplinkService() (_ error) {
 			}
 
 			// query proxyer-->forward pack loss
-			if hdr.ID == 0xff {
-				hdr.Kind = proto.PackLossProxyerUplink
-				hdr.Encode(pkt.SetData(0))
+			if hdr.DataID() == 0xff {
+				hdr.SetDataID(0)
+				hdr.SetKind(bvvd.PackLossProxyerUplink)
 
 				if err = p.sender.WriteToAddrPort(pkt, f.Addr()); err != nil {
 					return p.close(err)
 				}
 			}
 		default:
-			panic("")
+			p.config.logger.Warn("unknown kind from client", slog.String("kind", kind.String()), slog.String("client", caddr.String()))
 		}
 	}
 }
@@ -189,7 +180,6 @@ func (p *Proxyer) uplinkService() (_ error) {
 func (p *Proxyer) donwlinkService() (_ error) {
 	var (
 		pkt = packet.Make(p.config.MaxRecvBuff)
-		hdr = &proto.Header{}
 	)
 
 	for {
@@ -200,32 +190,27 @@ func (p *Proxyer) donwlinkService() (_ error) {
 			continue
 		}
 
-		head := pkt.Head()
-		if err := hdr.Decode(pkt); err != nil {
-			p.config.logger.Warn(err.Error(), errorx.Trace(err))
-			continue
-		}
+		hdr := bvvd.Bvvd(pkt.Bytes())
 
-		switch hdr.Kind {
-		case proto.Data:
+		switch kind := hdr.Kind(); kind {
+		case bvvd.Data:
 			f := p.fs.Get(faddr)
 			if f == nil {
 				p.config.logger.Warn("can't get forward", slog.String("forwar", p.forward.String()))
 				continue
 			}
-			f.DownlinkID(hdr.ID)
+			f.DownlinkID(hdr.DataID())
 
-			hdr.ID = p.cs.Client(hdr.Client).DownlinkID()
-			hdr.Encode(pkt)
-
+			caddr := hdr.Client()
+			hdr.SetDataID(p.cs.Client(caddr).DownlinkID())
 			if debug.Debug() && rand.Int()%100 == 99 {
 				continue // PackLossClientDownlink
 			}
 
-			if err = p.conn.WriteToAddrPort(pkt.SetHead(head), hdr.Client); err != nil {
+			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
-		case proto.PackLossProxyerUplink:
+		case bvvd.PackLossProxyerUplink:
 			f := p.fs.Get(faddr)
 			if f == nil {
 				p.config.logger.Warn("can't get forward", slog.String("forwar", p.forward.String()), errorx.Trace(nil))
@@ -238,12 +223,12 @@ func (p *Proxyer) donwlinkService() (_ error) {
 			} else {
 				f.SetUplinkPL(pl)
 			}
-		case proto.PingForward:
-			if err = p.conn.WriteToAddrPort(pkt.SetHead(head), hdr.Client); err != nil {
+		case bvvd.PingForward:
+			if err = p.conn.WriteToAddrPort(pkt, hdr.Client()); err != nil {
 				return p.close(err)
 			}
 		default:
-			p.config.logger.Warn("invalid kind from forward", slog.String("kind", hdr.Kind.String()), slog.String("forward", faddr.String()))
+			p.config.logger.Warn("invalid kind from forward", slog.String("kind", kind.String()), slog.String("forward", faddr.String()))
 			continue
 		}
 	}

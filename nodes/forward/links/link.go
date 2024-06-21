@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
-	"github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -33,7 +33,7 @@ type Link struct {
 	ep     Endpoint
 	paddr  netip.AddrPort
 	laddr  netip.AddrPort
-	header proto.Header
+	header bvvd.Fields
 
 	closeErr errorx.CloseErr
 }
@@ -44,8 +44,8 @@ func newLink(links *Links, link Endpoint, paddr netip.AddrPort) (*Link, error) {
 			links: links,
 			ep:    link,
 			paddr: paddr,
-			header: proto.Header{
-				Kind:   proto.Data,
+			header: bvvd.Fields{
+				Kind:   bvvd.Data,
 				Proto:  link.proto,
 				Client: link.client,
 				Server: link.server.Addr(),

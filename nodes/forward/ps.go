@@ -5,8 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
-	"github.com/lysShub/anton-planet-accelerator/proto"
 )
 
 type Proxyers struct {
@@ -27,7 +27,7 @@ func (ps *Proxyers) Proxyer(paddr netip.AddrPort) *Proxyer {
 	ps.mu.RUnlock()
 
 	if p == nil {
-		p = &Proxyer{uplinkPL: nodes.NewPLStats(proto.MaxID)}
+		p = &Proxyer{uplinkPL: nodes.NewPLStats(bvvd.MaxID)}
 		ps.mu.Lock()
 		ps.ps[paddr] = p
 		ps.mu.Unlock()

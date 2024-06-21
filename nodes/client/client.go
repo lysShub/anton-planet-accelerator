@@ -13,9 +13,9 @@ import (
 	"time"
 
 	accelerator "github.com/lysShub/anton-planet-accelerator"
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/conn"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
-	proto "github.com/lysShub/anton-planet-accelerator/proto"
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/fatun"
 	"github.com/lysShub/netkit/debug"
@@ -52,14 +52,14 @@ type Client struct {
 
 type msg struct {
 	proxyer netip.AddrPort
-	header  proto.Header
+	header  bvvd.Fields
 	data    []byte
 }
 
 func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
 	var c = &Client{
 		config:      config.init(),
-		downlinkPL:  nodes.NewPLStats(proto.MaxID),
+		downlinkPL:  nodes.NewPLStats(bvvd.MaxID),
 		proxyers:    proxyers,
 		statsRecver: make(chan msg, 8),
 	}
@@ -128,9 +128,9 @@ func (c *Client) Start() {
 }
 
 func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err error) {
-	kinds := []proto.Kind{
-		proto.PingProxyer, proto.PingForward, proto.PackLossClientUplink,
-		proto.PackLossProxyerUplink, proto.PackLossProxyerDownlink,
+	kinds := []bvvd.Kind{
+		bvvd.PingProxyer, bvvd.PingForward, bvvd.PackLossClientUplink,
+		bvvd.PackLossProxyerUplink, bvvd.PackLossProxyerDownlink,
 	}
 
 	select {
@@ -140,11 +140,11 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err e
 	}
 
 	for _, kind := range kinds {
-		var pkt = packet.Make(64 + proto.HeaderSize)
-		var hdr = proto.Header{
+		var pkt = packet.Make(64 + bvvd.Size)
+		var hdr = bvvd.Fields{
 			Kind:   kind,
 			Proto:  syscall.IPPROTO_TCP,
-			ID:     0,
+			DataID: 0,
 			Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0),
 			Server: netip.IPv4Unspecified(),
 		}
@@ -166,21 +166,21 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err e
 			i = len(kinds) // break
 		case msg := <-c.statsRecver:
 			switch msg.header.Kind {
-			case proto.PingProxyer:
+			case bvvd.PingProxyer:
 				stats.PingProxyer = time.Since(start)
-			case proto.PingForward:
+			case bvvd.PingForward:
 				stats.PingForward = time.Since(start)
-			case proto.PackLossClientUplink:
+			case bvvd.PackLossClientUplink:
 				err := stats.PackLossClientUplink.Decode(msg.data)
 				if err != nil {
 					return stats, err
 				}
-			case proto.PackLossProxyerUplink:
+			case bvvd.PackLossProxyerUplink:
 				err := stats.PackLossProxyerUplink.Decode(msg.data)
 				if err != nil {
 					return stats, err
 				}
-			case proto.PackLossProxyerDownlink:
+			case bvvd.PackLossProxyerDownlink:
 				err := stats.PackLossProxyerDownlink.Decode(msg.data)
 				if err != nil {
 					return stats, err
@@ -200,7 +200,7 @@ func (c *Client) captureService() (_ error) {
 	var (
 		addr divert.Address
 		ip   = packet.Make(0, c.config.MaxRecvBuff)
-		hdr  = proto.Header{Kind: proto.Data, Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0)}
+		hdr  = bvvd.Fields{Kind: bvvd.Data, Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0)}
 		head = 64
 	)
 
@@ -253,7 +253,7 @@ func (c *Client) captureService() (_ error) {
 		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
 		hdr.Proto = uint8(s.Proto)
 		hdr.Server = s.Dst.Addr()
-		hdr.ID = uint8(c.uplinkId.Add(1))
+		hdr.DataID = uint8(c.uplinkId.Add(1))
 		hdr.Encode(ip)
 
 		if debug.Debug() && rand.Int()%100 == 99 {
@@ -270,7 +270,7 @@ func (c *Client) injectServic() (_ error) {
 	var (
 		laddr = tcpip.AddrFrom4(c.laddr.Addr().As4())
 		pkt   = packet.Make(0, c.config.MaxRecvBuff)
-		hdr   = &proto.Header{}
+		hdr   = &bvvd.Fields{}
 	)
 
 	for {
@@ -286,7 +286,7 @@ func (c *Client) injectServic() (_ error) {
 			continue
 		}
 
-		if hdr.Kind != proto.Data {
+		if hdr.Kind != bvvd.Data {
 			c.handleMsg(msg{
 				proxyer: paddr, header: *hdr,
 				data: slices.Clone(pkt.Bytes()),
@@ -294,7 +294,7 @@ func (c *Client) injectServic() (_ error) {
 			continue
 		}
 
-		c.downlinkPL.ID(int(hdr.ID))
+		c.downlinkPL.ID(int(hdr.DataID))
 
 		if hdr.Proto == uint8(header.TCPProtocolNumber) {
 			fatun.UpdateTcpMssOption(pkt.Bytes(), c.config.TcpMssDelta)

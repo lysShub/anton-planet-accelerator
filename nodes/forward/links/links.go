@@ -8,7 +8,7 @@ import (
 	"net/netip"
 	"sync"
 
-	"github.com/lysShub/anton-planet-accelerator/proto"
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -63,7 +63,7 @@ type Endpoint struct {
 	server      netip.AddrPort
 }
 
-func NewEP(hdr proto.Header, t header.Transport) Endpoint {
+func NewEP(hdr bvvd.Fields, t header.Transport) Endpoint {
 	return Endpoint{
 		client:      hdr.Client,
 		proto:       hdr.Proto,
