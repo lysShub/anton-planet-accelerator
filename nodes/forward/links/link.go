@@ -87,9 +87,7 @@ func newLink(links *Links, link Endpoint, paddr netip.AddrPort) (*Link, error) {
 
 func (l *Link) close(cause error) error {
 	cause = errors.WithStack(cause)
-
-	dead := cause == nil && !l.closeErr.Closed()
-	err := l.closeErr.Close(func() (errs []error) {
+	return l.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
 		if l.raw != nil {
 			errs = append(errs, l.raw.Close())
@@ -101,10 +99,6 @@ func (l *Link) close(cause error) error {
 		l.links.del(l.ep)
 		return errs
 	})
-	if dead || errors.Is(err, net.ErrClosed) {
-		return errorx.WrapTemp(err)
-	}
-	return nil
 }
 
 func (l *Link) keepalive() {

@@ -168,7 +168,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				hdr.SetDataID(0)
 				hdr.SetKind(bvvd.PackLossProxyerUplink)
 
-				if err = p.sender.WriteToAddrPort(pkt, f.Addr()); err != nil {
+				if err = p.sender.WriteToAddrPort(pkt.SetData(bvvd.Size), f.Addr()); err != nil {
 					return p.close(err)
 				}
 			}
@@ -220,7 +220,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 
 			var pl nodes.PL
 			if err := pl.Decode(pkt.DetachN(bvvd.Size).Bytes()); err != nil {
-				p.config.logger.Warn(err.Error(), errorx.Trace(nil))
+				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 			} else {
 				f.SetUplinkPL(pl)
 			}
