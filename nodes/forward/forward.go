@@ -35,9 +35,10 @@ type Forward struct {
 
 func New(addr string, loc bvvd.LocID, config *Config) (*Forward, error) {
 	var f = &Forward{
-		config: config.init(),
-		ps:     NewProxyers(),
-		links:  links.NewLinks(),
+		config:   config.init(),
+		location: loc,
+		ps:       NewProxyers(),
+		links:    links.NewLinks(),
 	}
 	err := nodes.DisableOffload(config.logger)
 	if err != nil {
