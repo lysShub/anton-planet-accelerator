@@ -230,7 +230,11 @@ func (c *Client) captureService() (_ error) {
 	var (
 		addr divert.Address
 		ip   = packet.Make(0, c.config.MaxRecvBuff)
-		hdr  = bvvd.Fields{Kind: bvvd.Data, Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0)}
+		hdr  = bvvd.Fields{
+			Kind:   bvvd.Data,
+			LocID:  c.config.LocID,
+			Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0),
+		}
 		head = 64
 	)
 
