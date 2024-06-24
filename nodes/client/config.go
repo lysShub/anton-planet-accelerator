@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/pkg/errors"
 )
 
@@ -17,6 +18,9 @@ type Config struct {
 	logger  *slog.Logger
 
 	PcapPath string
+
+	LocID    bvvd.LocID
+	Proxyers []netip.AddrPort
 }
 
 func (c *Config) init() *Config {

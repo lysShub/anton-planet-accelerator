@@ -1,10 +1,13 @@
 package bvvd
 
+//go:generate stringer -output bvvd_gen.go -type=Kind,LocID
+
 import (
 	"fmt"
 	"net/netip"
 	"syscall"
 
+	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
 )
@@ -29,39 +32,47 @@ func (b Bvvd) DataID() uint8 {
 func (b Bvvd) SetDataID(id uint8) {
 	b[2] = id
 }
+func (b Bvvd) LocID() LocID {
+	return LocID(b[3])
+}
+func (b Bvvd) SetLocID(loc LocID) {
+	b[3] = byte(loc)
+}
 func (b Bvvd) Client() netip.AddrPort {
 	return netip.AddrPortFrom(
-		netip.AddrFrom4([4]byte(b[5:])),
-		uint16(b[3])+uint16(b[4])<<8,
+		netip.AddrFrom4([4]byte(b[6:])),
+		uint16(b[4])+uint16(b[5])<<8,
 	)
 }
 func (b Bvvd) SetClient(client netip.AddrPort) {
 	if !client.Addr().Is4() {
 		panic("only support ipv4")
 	}
-	copy(b[5:], client.Addr().AsSlice())
-	b[3] = byte(client.Port())
-	b[4] = byte(client.Port() >> 8)
+	copy(b[6:], client.Addr().AsSlice())
+	b[4] = byte(client.Port())
+	b[5] = byte(client.Port() >> 8)
 }
 func (b Bvvd) Server() netip.Addr {
-	return netip.AddrFrom4([4]byte(b[9:]))
+	return netip.AddrFrom4([4]byte(b[10:]))
 }
 func (b Bvvd) SetServer(server netip.Addr) {
 	if !server.Is4() {
 		panic("only support ipv4")
 	}
-	copy(b[9:], server.AsSlice())
+	copy(b[10:], server.AsSlice())
 }
 
 type Fields struct {
 	Kind   Kind
 	Proto  uint8
 	DataID uint8
+	LocID  LocID // forward location
 	Client netip.AddrPort
 	Server netip.Addr
 }
 
 const MaxID = 0xff
+const Size = 14
 
 func (h *Fields) Valid() bool {
 	return h != nil && h.Server.Is4() && h.Client.Addr().Is4() &&
@@ -77,12 +88,13 @@ func (h Fields) String() string {
 
 func (h *Fields) Encode(to *packet.Packet) error {
 	if !h.Valid() {
-		return errors.Errorf("invalid header %#v", h)
+		return errorx.WrapTemp(errors.Errorf("invalid header %#v", h))
 	}
 
 	to.Attach(h.Server.AsSlice()...)
 	to.Attach(h.Client.Addr().AsSlice()...)
 	to.Attach(byte(h.Client.Port()), byte(h.Client.Port()>>8))
+	to.Attach(byte(h.LocID))
 	to.Attach(h.DataID)
 	to.Attach(h.Proto)
 	to.Attach(byte(h.Kind))
@@ -98,11 +110,12 @@ func (h *Fields) Decode(from *packet.Packet) error {
 	h.Kind = Kind(b[0])
 	h.Proto = b[1]
 	h.DataID = b[2]
+	h.LocID = LocID(b[3])
 	h.Client = netip.AddrPortFrom(
-		netip.AddrFrom4([4]byte(b[5:9])),
-		uint16(b[3])+uint16(b[4])<<8,
+		netip.AddrFrom4([4]byte(b[6:])),
+		uint16(b[4])+uint16(b[5])<<8,
 	)
-	h.Server = netip.AddrFrom4([4]byte(b[9:13]))
+	h.Server = netip.AddrFrom4([4]byte(b[10:]))
 	if !h.Valid() {
 		return errors.Errorf("invalid header %s", h.String())
 	}
@@ -111,17 +124,14 @@ func (h *Fields) Decode(from *packet.Packet) error {
 	return nil
 }
 
-//go:generate stringer -output bvvd_gen.go -type=Kind
 type Kind uint8
 
 func (k Kind) Valid() bool {
-	return _kind_start < k && k < _kind_end
+	return 0 < k && k < _kind_end
 }
 
 const (
-	Size = 13
-
-	_kind_start Kind = iota
+	_ Kind = iota
 	Data
 	PingProxyer             // rtt client  <--> proxyer
 	PingForward             // rtt client  <--> forward

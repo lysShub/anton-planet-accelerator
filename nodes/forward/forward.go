@@ -95,11 +95,18 @@ func (f *Forward) recvService() (err error) {
 				return f.close(err)
 			}
 		case bvvd.PackLossProxyerUplink:
-			pkt.SetHead(head).Append(
-				f.ps.Proxyer(paddr).UplinkPL().Encode()...,
-			)
-			err := f.conn.WriteToAddrPort(pkt, paddr)
-			if err != nil {
+			var msg nodes.Message
+			if err := msg.Decode(pkt); err != nil {
+				f.config.logger.Error(err.Error(), errorx.Trace(err))
+				continue
+			}
+			msg.Raw = f.ps.Proxyer(paddr).UplinkPL()
+			if err := msg.Encode(pkt.SetData(0)); err != nil {
+				f.config.logger.Error(err.Error(), errorx.Trace(err))
+				continue
+			}
+
+			if err := f.conn.WriteToAddrPort(pkt, paddr); err != nil {
 				return f.close(err)
 			}
 		case bvvd.Data:
@@ -138,7 +145,10 @@ func (f *Forward) downlinkService(link *links.Link) (_ error) {
 		if err := link.Recv(pkt.Sets(64, 0xffff)); err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				f.config.logger.Info("del link", slog.String("endpoint", link.Endpoint().String()))
-				return nil
+				return nil // close by keepalive
+			} else if errorx.Temporary(err) {
+				f.config.logger.Warn(err.Error(), errorx.Trace(err))
+				continue
 			} else {
 				return f.close(err)
 			}

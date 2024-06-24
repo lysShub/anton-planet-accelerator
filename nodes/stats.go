@@ -1,13 +1,16 @@
 package nodes
 
 import (
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"math"
-	"strconv"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -239,36 +242,49 @@ func (p *stats) PL(limit int) float64 {
 
 type PL float64
 
-func (p PL) Encode() (to []byte) {
+func (p PL) Encode(to *packet.Packet) error {
+	if p == 0 {
+		p = math.SmallestNonzeroFloat64
+	}
 	if err := p.Valid(); err != nil {
-		panic(err)
+		return err
 	}
-	return strconv.AppendFloat(nil, float64(p), 'f', 3, 64)
+	to.Append(p.bytes()...)
+	return nil
 }
-func (p *PL) Decode(from []byte) (err error) {
-	v, err := strconv.ParseFloat(string(from), 64)
-	if err != nil {
-		return errors.WithStack(err)
+
+func (p *PL) Decode(from *packet.Packet) (err error) {
+	if from.Data() < 8 {
+		return errors.Errorf("too small %d", from.Data())
 	}
-	*p = PL(v)
+	b := from.Detach(make([]byte, 8))
+
+	v := binary.BigEndian.Uint64(b)
+	*p = *(*PL)(unsafe.Pointer(&v))
 	return p.Valid()
 }
+
+func (p PL) bytes() []byte {
+	return binary.BigEndian.AppendUint64(make([]byte, 0, 8), *(*uint64)(unsafe.Pointer(&p)))
+}
+
 func (p PL) Valid() error {
-	if p < 0 || 1 < p {
-		return errors.New("invalid pack loss")
+	if p <= 0 || 1 < p {
+		return errors.Errorf("invalid pack loss %s", hex.EncodeToString(p.bytes()))
 	}
 	return nil
 }
+
 func (p PL) String() string {
-	if p < 0.0001 {
-		return "00.0"
-	} else if p >= 1 {
+	if p <= 0 || 1 <= p {
 		return "--.-"
 	}
 
 	v := float64(p * 100)
-	v1 := int(v)
+	v1 := int(math.Round(v))
 	v2 := int((v - float64(v1)) * 10)
-
+	if v2 < 0 {
+		v2 = 0
+	}
 	return fmt.Sprintf("%02d.%d", v1, v2)
 }

@@ -9,7 +9,6 @@ import (
 	"net/netip"
 	"slices"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	accelerator "github.com/lysShub/anton-planet-accelerator"
@@ -24,7 +23,6 @@ import (
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/netkit/pcap"
 	"github.com/pkg/errors"
-	"golang.org/x/net/context"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -38,30 +36,24 @@ type Client struct {
 	capture *divert.Handle
 	inbound divert.Address
 
-	conn        conn.Conn
-	uplinkId    atomic.Uint32
-	downlinkPL  *nodes.PLStats
-	statsRecver chan msg
+	conn       conn.Conn
+	uplinkId   atomic.Uint32
+	downlinkPL *nodes.PLStats
 
-	proxyers []netip.AddrPort
+	route *routeCache
+
+	msgMgr *messageManager
 
 	pcap *pcap.Pcap
 
 	closeErr errorx.CloseErr
 }
 
-type msg struct {
-	proxyer netip.AddrPort
-	header  bvvd.Fields
-	data    []byte
-}
-
-func New(proxyers []netip.AddrPort, config *Config) (*Client, error) {
+func New(config *Config) (*Client, error) {
 	var c = &Client{
-		config:      config.init(),
-		downlinkPL:  nodes.NewPLStats(bvvd.MaxID),
-		proxyers:    proxyers,
-		statsRecver: make(chan msg, 8),
+		config:     config.init(),
+		downlinkPL: nodes.NewPLStats(bvvd.MaxID),
+		msgMgr:     newMessageManager(),
 	}
 	var err error
 
@@ -121,74 +113,115 @@ func (c *Client) close(cause error) error {
 	})
 }
 
-func (c *Client) Start() {
-	c.config.logger.Info("start", slog.String("addr", c.laddr.String()), slog.Bool("debug", debug.Debug()))
+func (c *Client) Start() error {
 	go c.captureService()
 	go c.injectServic()
+
+	if c.config.LocID.Valid() {
+		var start = time.Now()
+		paddr, err := c.routeProbe(c.config.LocID)
+		if err != nil {
+			c.config.logger.Error(err.Error(), errorx.Trace(err))
+			return err
+		}
+
+		c.route = newFixModeRoute(paddr)
+		c.config.logger.Info("start",
+			slog.String("addr", c.laddr.String()),
+			slog.String("network", nodes.ProxyerNetwork),
+			slog.String("mode", "fix"),
+			slog.String("proxyer", paddr.String()),
+			slog.String("rtt", time.Since(start).String()),
+			slog.Bool("debug", debug.Debug()),
+		)
+	} else {
+		c.route = newAutoModeRoute(T)
+		c.config.logger.Info("start",
+			slog.String("addr", c.laddr.String()),
+			slog.String("network", nodes.ProxyerNetwork),
+			slog.String("mode", "auto"),
+			slog.Bool("debug", debug.Debug()),
+		)
+	}
+	return nil
+}
+
+func (c *Client) routeProbe(loc bvvd.LocID) (netip.AddrPort, error) {
+	var msgIds []uint32
+	for _, paddr := range c.config.Proxyers {
+		id, err := c.messageRequest(nodes.Message{
+			Kind: bvvd.PingForward, LocID: loc, Peer: paddr,
+		})
+		if err != nil {
+			return netip.AddrPort{}, err
+		}
+		msgIds = append(msgIds, id)
+	}
+
+	var idx int
+	c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
+		idx = slices.Index(msgIds, m.ID)
+		return idx >= 0
+	}, time.Second*3)
+	return c.config.Proxyers[idx], nil
+}
+
+func (c *Client) messageRequest(msg nodes.Message) (msgId uint32, err error) {
+	var pkt = packet.Make(64 + bvvd.Size)
+
+	msg.ID = c.msgMgr.ID()
+	if err := msg.Encode(pkt); err != nil {
+		return 0, err
+	}
+
+	if err := c.conn.WriteToAddrPort(pkt, msg.Peer); err != nil {
+		return 0, c.close(err)
+	}
+	return msg.ID, nil
 }
 
 func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err error) {
-	kinds := []bvvd.Kind{
-		bvvd.PingProxyer, bvvd.PingForward, bvvd.PackLossClientUplink,
-		bvvd.PackLossProxyerUplink, bvvd.PackLossProxyerDownlink,
-	}
+	var (
+		start = time.Now()
+		paddr netip.AddrPort
+		loc   bvvd.LocID
+		kinds = []bvvd.Kind{
+			bvvd.PingProxyer, bvvd.PingForward, bvvd.PackLossClientUplink,
+			bvvd.PackLossProxyerUplink, bvvd.PackLossProxyerDownlink,
+		}
+	)
 
-	select {
-	case <-c.statsRecver:
-	default:
-		break
-	}
-
+	var ids []uint32
 	for _, kind := range kinds {
-		var pkt = packet.Make(64 + bvvd.Size)
-		var hdr = bvvd.Fields{
-			Kind:   kind,
-			Proto:  syscall.IPPROTO_TCP,
-			DataID: 0,
-			Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0),
-			Server: netip.IPv4Unspecified(),
+		id, err := c.messageRequest(nodes.Message{
+			Kind: kind, LocID: loc, Peer: paddr,
+		})
+		if err != nil {
+			return nil, err
 		}
-		if err := hdr.Encode(pkt); err != nil {
-			return nil, c.close(err)
-		}
-		if err := c.conn.WriteToAddrPort(pkt, c.proxyers[0]); err != nil {
-			return nil, c.close(err)
-		}
+		ids = append(ids, id)
 	}
-	start := time.Now()
 
-	stats = (&NetworkStats{}).init()
-	var timer = time.After(timeout)
-	for i := 0; i < len(kinds); {
-		select {
-		case <-timer:
-			err = context.DeadlineExceeded
-			i = len(kinds) // break
-		case msg := <-c.statsRecver:
-			switch msg.header.Kind {
-			case bvvd.PingProxyer:
-				stats.PingProxyer = time.Since(start)
-			case bvvd.PingForward:
-				stats.PingForward = time.Since(start)
-			case bvvd.PackLossClientUplink:
-				err := stats.PackLossClientUplink.Decode(msg.data)
-				if err != nil {
-					return stats, err
-				}
-			case bvvd.PackLossProxyerUplink:
-				err := stats.PackLossProxyerUplink.Decode(msg.data)
-				if err != nil {
-					return stats, err
-				}
-			case bvvd.PackLossProxyerDownlink:
-				err := stats.PackLossProxyerDownlink.Decode(msg.data)
-				if err != nil {
-					return stats, err
-				}
-			default:
-				return nil, errors.Errorf("unknown net statistics kind %s", msg.header.Kind)
-			}
-			i++
+	stats = &NetworkStats{}
+	for i := 0; i < len(kinds); i++ {
+		msg, timeout := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
+			return slices.Contains(ids, m.ID)
+		}, time.Second*3)
+		if timeout {
+			return nil, errors.New("timeout")
+		}
+		switch msg.Kind {
+		case bvvd.PingProxyer:
+			stats.PingProxyer = time.Since(start)
+		case bvvd.PingForward:
+			stats.PingForward = time.Since(start)
+		case bvvd.PackLossClientUplink:
+			stats.PackLossClientUplink = msg.Raw.(nodes.PL)
+		case bvvd.PackLossProxyerUplink:
+			stats.PackLossProxyerUplink = msg.Raw.(nodes.PL)
+		case bvvd.PackLossProxyerDownlink:
+			stats.PackLossProxyerDownlink = msg.Raw.(nodes.PL)
+		default:
 		}
 	}
 
@@ -260,7 +293,15 @@ func (c *Client) captureService() (_ error) {
 			continue // PackLossClientUplink
 		}
 
-		if err = c.conn.WriteToAddrPort(ip, c.proxyers[0]); err != nil {
+		paddr, loc, err := c.route.Proxyer(hdr.Server)
+		if err != nil {
+			c.config.logger.Error(err.Error(), errorx.Trace(err))
+		} else if loc.Valid() {
+			c.routeProbe(loc) // todo: 异步
+			panic("")
+		}
+
+		if err = c.conn.WriteToAddrPort(ip, paddr); err != nil {
 			return c.close(err)
 		}
 	}
@@ -287,15 +328,13 @@ func (c *Client) injectServic() (_ error) {
 		}
 
 		if hdr.Kind != bvvd.Data {
-			c.handleMsg(msg{
-				proxyer: paddr, header: *hdr,
-				data: slices.Clone(pkt.Bytes()),
-			})
+			if err = c.msgMgr.Put(paddr, *hdr, pkt); err != nil {
+				c.config.logger.Warn(err.Error(), errorx.Trace(err))
+			}
 			continue
 		}
 
 		c.downlinkPL.ID(int(hdr.DataID))
-
 		if hdr.Proto == uint8(header.TCPProtocolNumber) {
 			fatun.UpdateTcpMssOption(pkt.Bytes(), c.config.TcpMssDelta)
 		}
@@ -318,13 +357,5 @@ func (c *Client) injectServic() (_ error) {
 		if err != nil {
 			return c.close(err)
 		}
-	}
-}
-
-func (c *Client) handleMsg(msg msg) {
-	select {
-	case c.statsRecver <- msg:
-	default:
-		c.config.logger.Warn("msgRecver filled")
 	}
 }

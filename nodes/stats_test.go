@@ -6,6 +6,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/lysShub/netkit/packet"
 	"github.com/stretchr/testify/require"
 )
 
@@ -225,6 +226,26 @@ func Test_PLStats2(t *testing.T) {
 
 			require.False(t, dup.ID(id))
 		}
+	})
+}
+
+func Test_PL(t *testing.T) {
+	t.Run("base", func(t *testing.T) {
+		var pkt = packet.Make()
+
+		var pl PL
+		require.Equal(t, "--.-", pl.String())
+		require.NoError(t, pl.Encode(pkt))
+
+		var pl2 PL
+		require.NoError(t, pl2.Decode(pkt))
+		require.Nil(t, pl2.Valid())
+		require.Equal(t, "00.0", pl2.String())
+	})
+
+	t.Run("string", func(t *testing.T) {
+		var pl PL = 0.009
+		require.Equal(t, "01.0", pl.String())
 	})
 }
 

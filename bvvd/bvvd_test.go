@@ -19,6 +19,7 @@ func Test_Fields(t *testing.T) {
 		Kind:   PackLossClientUplink,
 		Proto:  syscall.IPPROTO_UDP,
 		DataID: byte(rand.Uint32()),
+		LocID:  Moscow,
 		Client: netip.AddrPortFrom(test.RandIP(), test.RandPort()),
 		Server: test.RandIP(),
 	}
@@ -38,6 +39,7 @@ func Test_Bvvd(t *testing.T) {
 			Kind:   PackLossClientUplink,
 			Proto:  syscall.IPPROTO_UDP,
 			DataID: byte(rand.Uint32()),
+			LocID:  Moscow,
 			Client: netip.AddrPortFrom(test.RandIP(), test.RandPort()),
 			Server: test.RandIP(),
 		}
@@ -48,6 +50,7 @@ func Test_Bvvd(t *testing.T) {
 		require.Equal(t, f.Kind, slave.Kind())
 		require.Equal(t, f.Proto, slave.Proto())
 		require.Equal(t, f.DataID, slave.DataID())
+		require.Equal(t, f.LocID, slave.LocID())
 		require.Equal(t, f.Client, slave.Client())
 		require.Equal(t, f.Server, slave.Server())
 	})
@@ -57,6 +60,7 @@ func Test_Bvvd(t *testing.T) {
 			Kind:   PackLossClientUplink,
 			Proto:  syscall.IPPROTO_UDP,
 			DataID: byte(rand.Uint32()),
+			LocID:  Moscow,
 			Client: netip.AddrPortFrom(test.RandIP(), test.RandPort()),
 			Server: test.RandIP(),
 		}
@@ -66,6 +70,7 @@ func Test_Bvvd(t *testing.T) {
 		slave.SetKind(f.Kind)
 		slave.SetProto(f.Proto)
 		slave.SetDataID(f.DataID)
+		slave.SetLocID(f.LocID)
 		slave.SetClient(f.Client)
 		slave.SetServer(f.Server)
 

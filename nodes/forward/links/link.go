@@ -123,8 +123,7 @@ func (l *Link) Recv(pkt *packet.Packet) error {
 	}
 	hdr.SetDestinationPort(l.ep.processPort)
 
-	l.header.Encode(pkt)
-	return nil
+	return l.header.Encode(pkt)
 }
 
 func (l *Link) Send(pkt *packet.Packet) error {

@@ -4,6 +4,7 @@
 package proxyer
 
 import (
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"net/netip"
@@ -104,41 +105,54 @@ func (p *Proxyer) uplinkService() (_ error) {
 			if err := p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
-		case bvvd.PackLossClientUplink:
-			pl := p.cs.Client(caddr).UplinkPL()
-			pkt.Append(pl.Encode()...)
-
-			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
-				return p.close(err)
-			}
-		case bvvd.PackLossProxyerDownlink:
-			f := p.fs.Get(p.forward)
-			if f == nil {
-				p.config.logger.Warn("can't get forward")
-				continue
-			}
-			pkt.Append(f.DownlinkPL().Encode()...)
-
-			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
-				return p.close(err)
-			}
-		case bvvd.PackLossProxyerUplink:
-			f := p.fs.Get(p.forward)
-			if f == nil {
-				p.config.logger.Warn("can't get forward")
-				continue
-			}
-			pkt.Append(f.UplinkPL().Encode()...)
-
-			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
-				return p.close(err)
-			}
 		case bvvd.PingForward:
 			hdr.SetClient(caddr)
 			err = p.sender.WriteToAddrPort(pkt, p.forward)
 			if err != nil {
 				return p.close(err)
 			}
+		case bvvd.PackLossClientUplink:
+			var msg nodes.Message
+			if err := msg.Decode(pkt); err != nil {
+				p.config.logger.Error(err.Error(), errorx.Trace(err))
+				continue
+			}
+			msg.Raw = p.cs.Client(caddr).UplinkPL()
+
+			if err := msg.Encode(pkt.SetData(0)); err != nil {
+				p.config.logger.Error(err.Error(), errorx.Trace(err))
+				continue
+			}
+
+			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
+				return p.close(err)
+			}
+		case bvvd.PackLossProxyerDownlink, bvvd.PackLossProxyerUplink:
+			f := p.fs.Get(p.forward)
+			if f == nil {
+				p.config.logger.Warn("can't get forward")
+				continue
+			}
+
+			var msg nodes.Message
+			if err := msg.Decode(pkt); err != nil {
+				p.config.logger.Warn("can't get forward")
+				continue
+			}
+			if kind == bvvd.PackLossProxyerDownlink {
+				msg.Raw = f.DownlinkPL()
+			} else {
+				msg.Raw = f.UplinkPL()
+			}
+			if err := msg.Encode(pkt.SetData(0)); err != nil {
+				p.config.logger.Warn("can't get forward")
+				continue
+			}
+
+			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
+				return p.close(err)
+			}
+
 		case bvvd.Data:
 			p.cs.Client(caddr).UplinkID(int(hdr.DataID()))
 			if debug.Debug() {
@@ -218,11 +232,16 @@ func (p *Proxyer) donwlinkService() (_ error) {
 				continue
 			}
 
-			var pl nodes.PL
-			if err := pl.Decode(pkt.DetachN(bvvd.Size).Bytes()); err != nil {
-				p.config.logger.Warn(err.Error(), errorx.Trace(err))
-			} else {
+			var msg nodes.Message
+			if err := msg.Decode(pkt); err != nil {
+				p.config.logger.Error(err.Error(), errorx.Trace(err))
+				continue
+			}
+
+			if pl, ok := msg.Raw.(nodes.PL); ok {
 				f.SetUplinkPL(pl)
+			} else {
+				p.config.logger.Warn(fmt.Sprintf("unknown type %T", msg.Raw), errorx.Trace(nil))
 			}
 		case bvvd.PingForward:
 			if err = p.conn.WriteToAddrPort(pkt, hdr.Client()); err != nil {
