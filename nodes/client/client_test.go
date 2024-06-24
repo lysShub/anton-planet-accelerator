@@ -4,16 +4,18 @@
 package client_test
 
 import (
-	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"testing"
 	"time"
 
 	accelerator "github.com/lysShub/anton-planet-accelerator"
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes/client"
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/netkit/errorx"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,6 +30,11 @@ func TestXxxx(t *testing.T) {
 		MaxRecvBuff: 2048,
 		TcpMssDelta: -64,
 		PcapPath:    "client.pcap",
+
+		LocID: bvvd.Moscow,
+		Proxyers: []netip.AddrPort{
+			netip.MustParseAddrPort("39.106.138.35:19986"), // 莫斯科
+		},
 	}
 	os.Remove(config.PcapPath)
 
@@ -43,9 +50,9 @@ func TestXxxx(t *testing.T) {
 
 	for {
 		stats, err := c.NetworkStats(time.Second)
-		if !errors.Is(err, os.ErrDeadlineExceeded) {
+		if errorx.Temporary(err) {
+			fmt.Println("warn", err.Error())
 			err = nil
-			// fmt.Println("timeout")
 		}
 		require.NoError(t, err)
 

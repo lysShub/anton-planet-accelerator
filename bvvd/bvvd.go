@@ -66,7 +66,7 @@ type Fields struct {
 	Kind   Kind
 	Proto  uint8
 	DataID uint8
-	LocID  LocID // forward location
+	LocID  LocID // forward location id
 	Client netip.AddrPort
 	Server netip.Addr
 }
@@ -75,10 +75,19 @@ const MaxID = 0xff
 const Size = 14
 
 func (h *Fields) Valid() bool {
-	return h != nil && h.Server.Is4() && h.Client.Addr().Is4() &&
-		(h.Proto == syscall.IPPROTO_UDP || h.Proto == syscall.IPPROTO_TCP) &&
+	ok := h != nil &&
+		h.Server.Is4() && h.Client.Addr().Is4() &&
 		h.Kind.Valid()
+	if !ok {
+		return ok
+	}
+
+	if h.Kind == Data {
+		return (h.Proto == syscall.IPPROTO_UDP || h.Proto == syscall.IPPROTO_TCP)
+	}
+	return true
 }
+
 func (h Fields) String() string {
 	return fmt.Sprintf(
 		"{Server:%s, Client:%s, Proto:%d,  Kind:%s}",

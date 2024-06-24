@@ -90,14 +90,11 @@ func New(config *Config) (*Client, error) {
 }
 
 func (c *Client) close(cause error) error {
-	if !c.closeErr.Closed() {
-		if cause != nil {
-			c.config.logger.Error(cause.Error(), errorx.Trace(cause))
-		} else {
-			c.config.logger.Info("close")
-		}
+	if cause != nil {
+		c.config.logger.Error(cause.Error(), errorx.Trace(cause))
+	} else {
+		c.config.logger.Info("close")
 	}
-
 	return c.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
 		if c.conn != nil {
@@ -182,10 +179,10 @@ func (c *Client) messageRequest(msg nodes.Message) (msgId uint32, err error) {
 
 func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err error) {
 	var (
-		start = time.Now()
-		paddr netip.AddrPort
-		loc   bvvd.LocID
-		kinds = []bvvd.Kind{
+		start                = time.Now()
+		paddr netip.AddrPort = c.config.Proxyers[0] // optimize
+		loc   bvvd.LocID     = c.config.LocID
+		kinds                = []bvvd.Kind{
 			bvvd.PingProxyer, bvvd.PingForward, bvvd.PackLossClientUplink,
 			bvvd.PackLossProxyerUplink, bvvd.PackLossProxyerDownlink,
 		}
@@ -208,7 +205,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err e
 			return slices.Contains(ids, m.ID)
 		}, time.Second*3)
 		if timeout {
-			return nil, errors.New("timeout")
+			return stats, errorx.WrapTemp(errors.New("timeout"))
 		}
 		switch msg.Kind {
 		case bvvd.PingProxyer:

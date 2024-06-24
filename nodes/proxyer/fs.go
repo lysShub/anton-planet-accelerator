@@ -12,24 +12,27 @@ import (
 
 type Forwards struct {
 	mu sync.RWMutex
-	fs map[netip.AddrPort]*Forward
+	fs map[bvvd.LocID]*Forward
 }
 
 func NewForwards() *Forwards {
-	return &Forwards{fs: map[netip.AddrPort]*Forward{}}
+	return &Forwards{fs: map[bvvd.LocID]*Forward{}}
 }
 
-// todo: 根据地理标签获取
-func (f *Forwards) Get(faddr netip.AddrPort) *Forward {
+func (f *Forwards) Get(loc bvvd.LocID) *Forward {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	return f.fs[faddr]
+	return f.fs[loc]
 }
 
-func (f *Forwards) Add(faddr netip.AddrPort) {
+func (f *Forwards) Add(loc bvvd.LocID, faddr netip.AddrPort) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.fs[faddr] = &Forward{
+	if _, has := f.fs[loc]; has {
+		panic("todo: 现在只能一对一")
+	}
+
+	f.fs[loc] = &Forward{
 		faddr:      faddr,
 		donwlinkPL: nodes.NewPLStats(bvvd.MaxID),
 	}

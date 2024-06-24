@@ -15,25 +15,25 @@ import (
 type routeCache struct {
 	fixModeProxyer netip.AddrPort
 
-	loction Loction
-	mu      sync.RWMutex
-	locs    map[bvvd.LocID]netip.AddrPort // loc:paddr
-	routes  map[netip.Addr]netip.AddrPort // sadd:paddr
+	location Location
+	mu       sync.RWMutex
+	locs     map[bvvd.LocID]netip.AddrPort // loc:paddr
+	routes   map[netip.Addr]netip.AddrPort // sadd:paddr
 }
 
-type Loction interface {
-	Loction(addr netip.Addr) (geodist.Coord, error)
+type Location interface {
+	Location(addr netip.Addr) (geodist.Coord, error)
 }
 
 func newFixModeRoute(paddr netip.AddrPort) *routeCache {
 	return &routeCache{fixModeProxyer: paddr}
 }
 
-func newAutoModeRoute(loc Loction) *routeCache {
+func newAutoModeRoute(loc Location) *routeCache {
 	return &routeCache{
-		loction: loc,
-		locs:    map[bvvd.LocID]netip.AddrPort{},
-		routes:  map[netip.Addr]netip.AddrPort{},
+		location: loc,
+		locs:     map[bvvd.LocID]netip.AddrPort{},
+		routes:   map[netip.Addr]netip.AddrPort{},
 	}
 }
 
@@ -49,7 +49,7 @@ func (r *routeCache) Proxyer(saddr netip.Addr) (paddr netip.AddrPort, loc bvvd.L
 		return paddr, 0, nil
 	}
 
-	coord, err := r.loction.Loction(saddr)
+	coord, err := r.location.Location(saddr)
 	if err != nil {
 		return netip.AddrPort{}, 0, err
 	}
@@ -86,7 +86,7 @@ type temp struct {
 
 var T = &temp{cache: map[netip.Addr]geodist.Coord{}}
 
-func (t *temp) Loction(addr netip.Addr) (geodist.Coord, error) {
+func (t *temp) Location(addr netip.Addr) (geodist.Coord, error) {
 	if !addr.Is4() {
 		return geodist.Coord{}, errors.New("only support ipv4")
 	}

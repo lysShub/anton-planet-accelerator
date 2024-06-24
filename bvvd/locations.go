@@ -6,12 +6,12 @@ import (
 	"github.com/jftuga/geodist"
 )
 
-type Loction struct {
+type Location struct {
 	Loc geodist.Coord
 	ID  LocID
 }
 
-var Locs = loctions{
+var Locs = locations{
 	{geodist.Coord{Lat: 55.769, Lon: 37.586}, Moscow},
 	{geodist.Coord{Lat: 50.103, Lon: 8.679}, Frankfurt},
 	{geodist.Coord{Lat: 35.699, Lon: 139.774}, Tokyo},
@@ -33,9 +33,9 @@ func (l LocID) Valid() bool {
 	return 0 < l && l < _end
 }
 
-type loctions []Loction
+type locations []Location
 
-func (ls loctions) Match(dst geodist.Coord) (Loction, float64) {
+func (ls locations) Match(dst geodist.Coord) (Location, float64) {
 	var dist float64 = math.MaxFloat64
 	var idx int
 	for i, e := range ls {

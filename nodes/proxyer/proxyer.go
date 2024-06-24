@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
-	"net/netip"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/conn"
@@ -26,21 +25,21 @@ type Proxyer struct {
 	conn conn.Conn
 	cs   *Clients
 
-	sender  conn.Conn
-	forward netip.AddrPort // todo: 临时的
-	fs      *Forwards
+	sender conn.Conn
+	fs     *Forwards
 
 	closeErr errorx.CloseErr
 }
 
-func New(addr string, forward netip.AddrPort, config *Config) (*Proxyer, error) {
+func New(addr string, config *Config) (*Proxyer, error) {
 	var p = &Proxyer{
-		config:  config.init(),
-		cs:      NewClients(),
-		forward: forward,
-		fs:      NewForwards(),
+		config: config.init(),
+		cs:     NewClients(),
+		fs:     NewForwards(),
 	}
-	p.fs.Add(forward) // todo: temporary
+	for _, f := range config.Forwards {
+		p.fs.Add(f.LocID, config.Forwards[0].Faddr)
+	}
 
 	err := nodes.DisableOffload(config.logger)
 	if err != nil {
@@ -107,7 +106,13 @@ func (p *Proxyer) uplinkService() (_ error) {
 			}
 		case bvvd.PingForward:
 			hdr.SetClient(caddr)
-			err = p.sender.WriteToAddrPort(pkt, p.forward)
+			f := p.fs.Get(hdr.LocID())
+			if f == nil {
+				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
+				continue
+			}
+
+			err = p.sender.WriteToAddrPort(pkt, f.Addr())
 			if err != nil {
 				return p.close(err)
 			}
@@ -128,15 +133,15 @@ func (p *Proxyer) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		case bvvd.PackLossProxyerDownlink, bvvd.PackLossProxyerUplink:
-			f := p.fs.Get(p.forward)
+			f := p.fs.Get(hdr.LocID())
 			if f == nil {
-				p.config.logger.Warn("can't get forward")
+				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
 				continue
 			}
 
 			var msg nodes.Message
 			if err := msg.Decode(pkt); err != nil {
-				p.config.logger.Warn("can't get forward")
+				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
 				continue
 			}
 			if kind == bvvd.PackLossProxyerDownlink {
@@ -145,7 +150,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				msg.Raw = f.UplinkPL()
 			}
 			if err := msg.Encode(pkt.SetData(0)); err != nil {
-				p.config.logger.Warn("can't get forward")
+				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
 				continue
 			}
 
@@ -161,9 +166,9 @@ func (p *Proxyer) uplinkService() (_ error) {
 				require.True(test.T(), ok)
 			}
 
-			f := p.fs.Get(p.forward)
+			f := p.fs.Get(hdr.LocID())
 			if f == nil {
-				p.config.logger.Warn("can't get forward", slog.String("forwar", p.forward.String()))
+				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
 				continue
 			}
 
@@ -209,9 +214,9 @@ func (p *Proxyer) donwlinkService() (_ error) {
 
 		switch kind := hdr.Kind(); kind {
 		case bvvd.Data:
-			f := p.fs.Get(faddr)
+			f := p.fs.Get(hdr.LocID())
 			if f == nil {
-				p.config.logger.Warn("can't get forward", slog.String("forwar", p.forward.String()))
+				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
 				continue
 			}
 			f.DownlinkID(hdr.DataID())
@@ -226,9 +231,9 @@ func (p *Proxyer) donwlinkService() (_ error) {
 				return p.close(err)
 			}
 		case bvvd.PackLossProxyerUplink:
-			f := p.fs.Get(faddr)
+			f := p.fs.Get(hdr.LocID())
 			if f == nil {
-				p.config.logger.Warn("can't get forward", slog.String("forwar", p.forward.String()), errorx.Trace(nil))
+				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
 				continue
 			}
 
