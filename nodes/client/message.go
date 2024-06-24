@@ -1,22 +1,17 @@
 package client
 
 import (
-	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"math/rand"
-	"net/netip"
 	"strings"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/netkit/packet"
-	"github.com/pkg/errors"
 )
 
 type messageManager struct {
@@ -40,29 +35,10 @@ func (m *messageManager) ID() uint32 {
 	return id
 }
 
-func (m *messageManager) Put(paddr netip.AddrPort, hdr bvvd.Fields, payload *packet.Packet) error {
-	var msg = nodes.Message{
-		Kind:  hdr.Kind,
-		LocID: hdr.LocID,
-		Peer:  paddr,
-	}
-
-	if payload.Data() < 4 {
-		return errors.Errorf("recv invalid message payload %s", hex.EncodeToString(payload.Bytes()))
-	}
-	msg.MsgID = binary.BigEndian.Uint32(payload.Bytes())
-	payload.DetachN(4)
-
-	switch hdr.Kind {
-	case bvvd.PingProxyer, bvvd.PingForward:
-	case bvvd.PackLossClientUplink, bvvd.PackLossProxyerUplink, bvvd.PackLossProxyerDownlink:
-		var pl nodes.PL
-		if err := pl.Decode(payload); err != nil {
-			return err
-		}
-		msg.Raw = pl
-	default:
-		return errors.Errorf("unknown kind %s", hdr.Kind.String())
+func (m *messageManager) Put(pkt *packet.Packet) error {
+	var msg = nodes.Message{}
+	if err := msg.Decode(pkt); err != nil {
+		return err
 	}
 
 	m.buff.MustPut(msg)

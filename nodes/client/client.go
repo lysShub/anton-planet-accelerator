@@ -147,8 +147,8 @@ func (c *Client) Start() error {
 func (c *Client) routeProbe(loc bvvd.LocID) (netip.AddrPort, error) {
 	var msgIds []uint32
 	for _, paddr := range c.config.Proxyers {
-		id, err := c.messageRequest(nodes.Message{
-			Kind: bvvd.PingForward, LocID: loc, Peer: paddr,
+		id, err := c.messageRequest(paddr, nodes.Message{
+			Kind: bvvd.PingForward, LocID: loc,
 		})
 		if err != nil {
 			return netip.AddrPort{}, err
@@ -164,7 +164,7 @@ func (c *Client) routeProbe(loc bvvd.LocID) (netip.AddrPort, error) {
 	return c.config.Proxyers[idx], nil
 }
 
-func (c *Client) messageRequest(msg nodes.Message) (msgId uint32, err error) {
+func (c *Client) messageRequest(paddr netip.AddrPort, msg nodes.Message) (msgId uint32, err error) {
 	var pkt = packet.Make(64 + bvvd.Size)
 
 	msg.MsgID = c.msgMgr.ID()
@@ -172,7 +172,7 @@ func (c *Client) messageRequest(msg nodes.Message) (msgId uint32, err error) {
 		return 0, err
 	}
 
-	if err := c.conn.WriteToAddrPort(pkt, msg.Peer); err != nil {
+	if err := c.conn.WriteToAddrPort(pkt, paddr); err != nil {
 		return 0, c.close(err)
 	}
 	return msg.MsgID, nil
@@ -181,7 +181,7 @@ func (c *Client) messageRequest(msg nodes.Message) (msgId uint32, err error) {
 func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err error) {
 	var (
 		start                = time.Now()
-		paddr netip.AddrPort = c.config.Proxyers[0] // optimize
+		paddr netip.AddrPort = c.config.Proxyers[0] // todo
 		loc   bvvd.LocID     = c.config.LocID
 		kinds                = []bvvd.Kind{
 			bvvd.PingProxyer, bvvd.PingForward, bvvd.PackLossClientUplink,
@@ -191,9 +191,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 
 	var ids []uint32
 	for _, kind := range kinds {
-		id, err := c.messageRequest(nodes.Message{
-			Kind: kind, LocID: loc, Peer: paddr,
-		})
+		id, err := c.messageRequest(paddr, nodes.Message{Kind: kind, LocID: loc})
 		if err != nil {
 			return nil, err
 		}
@@ -317,40 +315,36 @@ func (c *Client) injectServic() (_ error) {
 	var (
 		laddr = tcpip.AddrFrom4(c.laddr.Addr().As4())
 		pkt   = packet.Make(0, c.config.MaxRecvBuff)
-		hdr   = &bvvd.Fields{}
 	)
 
 	for {
-		paddr, err := c.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
+		_, err := c.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
 		if err != nil {
 			return c.close(err)
 		} else if pkt.Data() == 0 {
 			continue
 		}
 
-		if err := hdr.Decode(pkt); err != nil {
-			c.config.logger.Error(err.Error(), errorx.Trace(err))
-			continue
-		}
+		hdr := bvvd.Bvvd(pkt.Bytes())
 
-		if hdr.Kind != bvvd.Data {
-			if err = c.msgMgr.Put(paddr, *hdr, pkt); err != nil {
+		if hdr.Kind() != bvvd.Data {
+			if err = c.msgMgr.Put(pkt); err != nil {
 				c.config.logger.Warn(err.Error(), errorx.Trace(err))
 			}
 			continue
 		}
 
-		c.downlinkPL.ID(int(hdr.DataID))
-		if hdr.Proto == uint8(header.TCPProtocolNumber) {
+		c.downlinkPL.ID(int(hdr.DataID()))
+		if hdr.Proto() == uint8(header.TCPProtocolNumber) {
 			fatun.UpdateTcpMssOption(pkt.Bytes(), c.config.TcpMssDelta)
 		}
 
-		ip := header.IPv4(pkt.AttachN(header.IPv4MinimumSize).Bytes())
+		ip := header.IPv4(pkt.AttachN(-bvvd.Size + header.IPv4MinimumSize).Bytes())
 		ip.Encode(&header.IPv4Fields{
 			TotalLength: uint16(pkt.Data()),
 			TTL:         64,
-			Protocol:    hdr.Proto,
-			SrcAddr:     tcpip.AddrFrom4(hdr.Server.As4()),
+			Protocol:    hdr.Proto(),
+			SrcAddr:     tcpip.AddrFrom4(hdr.Server().As4()),
 			DstAddr:     laddr,
 		})
 		nodes.Rechecksum(ip)

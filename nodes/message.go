@@ -21,9 +21,6 @@ type Message struct {
 	Kind  bvvd.Kind
 	LocID bvvd.LocID
 	Raw   any
-
-	// other field
-	Peer netip.AddrPort
 }
 
 func (m *Message) Encode(to *packet.Packet) (err error) {
