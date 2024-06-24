@@ -22,7 +22,8 @@ import (
 )
 
 type Forward struct {
-	config *Config
+	config   *Config
+	location bvvd.LocID
 
 	conn conn.Conn
 	ps   *Proxyers
@@ -32,7 +33,7 @@ type Forward struct {
 	closeErr errorx.CloseErr
 }
 
-func New(addr string, config *Config) (*Forward, error) {
+func New(addr string, loc bvvd.LocID, config *Config) (*Forward, error) {
 	var f = &Forward{
 		config: config.init(),
 		ps:     NewProxyers(),
@@ -71,26 +72,21 @@ func (f *Forward) Serve() error {
 func (f *Forward) recvService() (err error) {
 	var (
 		pkt = packet.Make(f.config.MaxRecvBuffSize)
-		hdr = bvvd.Fields{}
 	)
 
 	for {
 		paddr, err := f.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
 		if err != nil {
 			return f.close(err)
-		} else if pkt.Data() == 0 {
+		} else if pkt.Data() < bvvd.Size {
 			continue
 		}
 
-		head := pkt.Head()
-		if err := hdr.Decode(pkt); err != nil {
-			f.config.logger.Error(err.Error(), errorx.Trace(err))
-			continue
-		}
+		hdr := bvvd.Bvvd(pkt.Bytes())
 
-		switch hdr.Kind {
+		switch kind := hdr.Kind(); kind {
 		case bvvd.PingForward:
-			err := f.conn.WriteToAddrPort(pkt.SetHead(head), paddr)
+			err := f.conn.WriteToAddrPort(pkt, paddr)
 			if err != nil {
 				return f.close(err)
 			}
@@ -111,14 +107,19 @@ func (f *Forward) recvService() (err error) {
 			}
 		case bvvd.Data:
 			if debug.Debug() {
-				require.True(test.T(), nodes.ValidChecksum(pkt, hdr.Proto, hdr.Server))
+				require.True(test.T(), nodes.ValidChecksum(pkt, hdr.Proto(), hdr.Server()))
 			}
-			f.ps.Proxyer(paddr).UplinkID(hdr.DataID)
+			f.ps.Proxyer(paddr).UplinkID(hdr.DataID())
+
+			// remove bvvd header
+			pkt = pkt.DetachN(bvvd.Size)
 
 			// only get port, tcp/udp is same
 			ep := links.NewEP(hdr, header.TCP(pkt.Bytes()))
 
-			link, new, err := f.links.Link(ep, paddr)
+			// read/create corresponding link, the link will self close by keepalive,
+			// so if Send/Recv return net.ErrClosed error should ignore.
+			link, new, err := f.links.Link(ep, paddr, f.location)
 			if err != nil {
 				return f.close(err)
 			} else if new {

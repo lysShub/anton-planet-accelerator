@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes/forward"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/rawsock/test"
@@ -21,7 +22,7 @@ func main() {
 		MaxRecvBuffSize: 2048,
 	}
 
-	f, err := forward.New(":19986", config)
+	f, err := forward.New(":19986", bvvd.Moscow, config)
 	require.NoError(t, err)
 
 	err = f.Serve()

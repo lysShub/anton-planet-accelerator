@@ -21,13 +21,13 @@ func NewLinks() *Links {
 	return &Links{links: map[Endpoint]*Link{}}
 }
 
-func (ls *Links) Link(ep Endpoint, paddr netip.AddrPort) (l *Link, new bool, err error) {
+func (ls *Links) Link(ep Endpoint, paddr netip.AddrPort, loc bvvd.LocID) (l *Link, new bool, err error) {
 	ls.mu.RLock()
 	l = ls.links[ep]
 	ls.mu.RUnlock()
 
 	if l == nil {
-		l, err = newLink(ls, ep, paddr)
+		l, err = newLink(ls, ep, paddr, loc)
 		if err != nil {
 			return nil, false, err
 		}
@@ -63,12 +63,12 @@ type Endpoint struct {
 	server      netip.AddrPort
 }
 
-func NewEP(hdr bvvd.Fields, t header.Transport) Endpoint {
+func NewEP(hdr bvvd.Bvvd, t header.Transport) Endpoint {
 	return Endpoint{
-		client:      hdr.Client,
-		proto:       hdr.Proto,
+		client:      hdr.Client(),
+		proto:       hdr.Proto(),
 		processPort: t.SourcePort(),
-		server:      netip.AddrPortFrom(hdr.Server, t.DestinationPort()),
+		server:      netip.AddrPortFrom(hdr.Server(), t.DestinationPort()),
 	}
 }
 

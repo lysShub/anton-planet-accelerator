@@ -38,7 +38,7 @@ type Link struct {
 	closeErr errorx.CloseErr
 }
 
-func newLink(links *Links, link Endpoint, paddr netip.AddrPort) (*Link, error) {
+func newLink(links *Links, link Endpoint, paddr netip.AddrPort, loc bvvd.LocID) (*Link, error) {
 	var (
 		l = &Link{
 			links: links,
@@ -47,6 +47,7 @@ func newLink(links *Links, link Endpoint, paddr netip.AddrPort) (*Link, error) {
 			header: bvvd.Fields{
 				Kind:   bvvd.Data,
 				Proto:  link.proto,
+				LocID:  loc,
 				Client: link.client,
 				Server: link.server.Addr(),
 			},
