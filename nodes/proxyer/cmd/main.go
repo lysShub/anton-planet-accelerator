@@ -25,7 +25,7 @@ func main() {
 			LocID bvvd.LocID
 		}{
 			{
-				Faddr: netip.MustParseAddrPort("45.150.236.6:19986"),
+				Faddr: netip.MustParseAddrPort("45.131.69.50:19986"),
 				LocID: bvvd.Moscow,
 			},
 		},

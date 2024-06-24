@@ -77,7 +77,7 @@ func (m *messageManager) PopBy(fn func(nodes.Message) (pop bool), timeout time.D
 	return m.buff.PopByDeadline(fn, time.Now().Add(timeout))
 }
 
-type NetworkStats struct {
+type NetworkStates struct {
 	PingProxyer             time.Duration
 	PingForward             time.Duration
 	PackLossClientUplink    nodes.PL
@@ -88,7 +88,7 @@ type NetworkStats struct {
 
 const InvalidRtt = time.Hour
 
-func (n *NetworkStats) String() string {
+func (n *NetworkStates) String() string {
 	var s = &strings.Builder{}
 
 	p2 := n.PingForward
@@ -117,8 +117,8 @@ func (n *NetworkStats) String() string {
 	return s.String()
 }
 
-func (*NetworkStats) strdur(dur time.Duration) string {
-	if dur <= 0 && time.Minute <= dur {
+func (*NetworkStates) strdur(dur time.Duration) string {
+	if dur <= 0 || time.Minute <= dur {
 		return "--.-"
 	}
 	ss := dur.Seconds() * 1000

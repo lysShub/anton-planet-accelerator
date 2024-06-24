@@ -1,26 +1,15 @@
 package client_test
 
 import (
-	"fmt"
-	"sync"
+	"strings"
 	"testing"
-	"time"
+
+	"github.com/lysShub/anton-planet-accelerator/nodes/client"
+	"github.com/stretchr/testify/require"
 )
 
-func TestXxxxx(t *testing.T) {
-
-	var mu sync.RWMutex
-	var rw = sync.NewCond(&mu)
-
-	go func() {
-		time.Sleep(time.Second)
-		rw.Broadcast()
-	}()
-
-	mu.RLock()
-	rw.Wait()
-	mu.RUnlock()
-
-	fmt.Println("pass")
-
+func Test_NetworkStates(t *testing.T) {
+	var stats = client.NetworkStates{}
+	str := stats.String()
+	require.Equal(t, 6, strings.Count(str, "--.-"))
 }

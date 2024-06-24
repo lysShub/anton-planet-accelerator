@@ -177,7 +177,7 @@ func (c *Client) messageRequest(msg nodes.Message) (msgId uint32, err error) {
 	return msg.ID, nil
 }
 
-func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err error) {
+func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err error) {
 	var (
 		start                = time.Now()
 		paddr netip.AddrPort = c.config.Proxyers[0] // optimize
@@ -199,7 +199,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStats, err e
 		ids = append(ids, id)
 	}
 
-	stats = &NetworkStats{}
+	stats = &NetworkStates{}
 	for i := 0; i < len(kinds); i++ {
 		msg, timeout := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
 			return slices.Contains(ids, m.ID)
