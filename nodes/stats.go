@@ -136,7 +136,7 @@ func (p *PLStats) ID(id int) {
 	p.s.Index(i)
 }
 
-func (p *PLStats) PL(limit int) float64 {
+func (p *PLStats) PL(limit int) PL {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.s.PL(limit)
@@ -197,7 +197,7 @@ func (p *PLStats2) ID(id int) (recved bool) {
 	return false
 }
 
-func (p *PLStats2) PL(limit int) float64 {
+func (p *PLStats2) PL(limit int) PL {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.s.PL(limit)
@@ -226,7 +226,7 @@ func (p *stats) Index(i int) {
 	p.count++
 }
 
-func (p *stats) PL(limit int) float64 {
+func (p *stats) PL(limit int) PL {
 	if p.count < limit || p.count < 2 {
 		return 0
 	}
@@ -237,7 +237,10 @@ func (p *stats) PL(limit int) float64 {
 		return 0 // repeat id
 	}
 	pl := float64(n-p.count) / float64(n)
-	return pl
+	if pl == 0 {
+		pl = math.SmallestNonzeroFloat64
+	}
+	return PL(pl)
 }
 
 type PL float64
