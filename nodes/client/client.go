@@ -5,6 +5,7 @@ package client
 
 import (
 	"log/slog"
+	"math"
 	"math/rand"
 	"net/netip"
 	"slices"
@@ -205,7 +206,8 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 			return slices.Contains(ids, m.ID)
 		}, time.Second*3)
 		if timeout {
-			return stats, errorx.WrapTemp(errors.New("timeout"))
+			err = errorx.WrapTemp(errors.New("timeout"))
+			break
 		}
 		switch msg.Kind {
 		case bvvd.PingProxyer:
@@ -223,6 +225,9 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 	}
 
 	stats.PackLossClientDownlink = nodes.PL(c.downlinkPL.PL(nodes.PLScale))
+	if stats.PackLossClientDownlink == 0 {
+		stats.PackLossClientDownlink = math.SmallestNonzeroFloat64
+	}
 	return stats, err
 }
 

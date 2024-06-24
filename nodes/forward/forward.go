@@ -106,13 +106,13 @@ func (f *Forward) recvService() (err error) {
 				return f.close(err)
 			}
 		case bvvd.Data:
-			if debug.Debug() {
-				require.True(test.T(), nodes.ValidChecksum(pkt, hdr.Proto(), hdr.Server()))
-			}
 			f.ps.Proxyer(paddr).UplinkID(hdr.DataID())
 
 			// remove bvvd header
 			pkt = pkt.DetachN(bvvd.Size)
+			if debug.Debug() {
+				require.True(test.T(), nodes.ValidChecksum(pkt, hdr.Proto(), hdr.Server()))
+			}
 
 			// only get port, tcp/udp is same
 			ep := links.NewEP(hdr, header.TCP(pkt.Bytes()))
