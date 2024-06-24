@@ -184,10 +184,15 @@ func (p *Proxyer) uplinkService() (_ error) {
 
 			// query proxyer-->forward pack loss
 			if hdr.DataID() == 0xff {
-				hdr.SetDataID(0)
-				hdr.SetKind(bvvd.PackLossProxyerUplink)
+				if err := (&nodes.Message{
+					MsgID: 1, // todo: 多个forward时还是要设置有效ID
+					Kind:  bvvd.PackLossProxyerUplink,
+					LocID: hdr.LocID(),
+				}).Encode(pkt.SetData(0)); err != nil {
+					return p.close(err)
+				}
 
-				if err = p.sender.WriteToAddrPort(pkt.SetData(bvvd.Size), f.Addr()); err != nil {
+				if err = p.sender.WriteToAddrPort(pkt, f.Addr()); err != nil {
 					return p.close(err)
 				}
 			}

@@ -50,7 +50,7 @@ func (m *messageManager) Put(paddr netip.AddrPort, hdr bvvd.Fields, payload *pac
 	if payload.Data() < 4 {
 		return errors.Errorf("recv invalid message payload %s", hex.EncodeToString(payload.Bytes()))
 	}
-	msg.ID = binary.BigEndian.Uint32(payload.Bytes())
+	msg.MsgID = binary.BigEndian.Uint32(payload.Bytes())
 	payload.DetachN(4)
 
 	switch hdr.Kind {
@@ -70,7 +70,7 @@ func (m *messageManager) Put(paddr netip.AddrPort, hdr bvvd.Fields, payload *pac
 }
 
 func (m *messageManager) PopByID(id uint32) nodes.Message {
-	return m.buff.PopBy(func(e nodes.Message) (pop bool) { return e.ID == id })
+	return m.buff.PopBy(func(e nodes.Message) (pop bool) { return e.MsgID == id })
 }
 
 func (m *messageManager) PopBy(fn func(nodes.Message) (pop bool), timeout time.Duration) (nodes.Message, bool) {

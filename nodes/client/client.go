@@ -158,7 +158,7 @@ func (c *Client) routeProbe(loc bvvd.LocID) (netip.AddrPort, error) {
 
 	var idx int
 	c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
-		idx = slices.Index(msgIds, m.ID)
+		idx = slices.Index(msgIds, m.MsgID)
 		return idx >= 0
 	}, time.Second*3)
 	return c.config.Proxyers[idx], nil
@@ -167,7 +167,7 @@ func (c *Client) routeProbe(loc bvvd.LocID) (netip.AddrPort, error) {
 func (c *Client) messageRequest(msg nodes.Message) (msgId uint32, err error) {
 	var pkt = packet.Make(64 + bvvd.Size)
 
-	msg.ID = c.msgMgr.ID()
+	msg.MsgID = c.msgMgr.ID()
 	if err := msg.Encode(pkt); err != nil {
 		return 0, err
 	}
@@ -175,7 +175,7 @@ func (c *Client) messageRequest(msg nodes.Message) (msgId uint32, err error) {
 	if err := c.conn.WriteToAddrPort(pkt, msg.Peer); err != nil {
 		return 0, c.close(err)
 	}
-	return msg.ID, nil
+	return msg.MsgID, nil
 }
 
 func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err error) {
@@ -203,7 +203,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 	stats = &NetworkStates{}
 	for i := 0; i < len(kinds); i++ {
 		msg, timeout := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
-			return slices.Contains(ids, m.ID)
+			return slices.Contains(ids, m.MsgID)
 		}, time.Second*3)
 		if timeout {
 			err = errorx.WrapTemp(errors.New("timeout"))

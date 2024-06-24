@@ -9,8 +9,15 @@ import (
 	"github.com/pkg/errors"
 )
 
+// todo: optimize to:
+//
+//	type Message1 struct {
+//		bvvd.Fields
+//		MsgID uint32
+//	}
+
 type Message struct {
-	ID    uint32
+	MsgID uint32
 	Kind  bvvd.Kind
 	LocID bvvd.LocID
 	Raw   any
@@ -29,7 +36,7 @@ func (m *Message) Encode(to *packet.Packet) (err error) {
 	default:
 		return errors.Errorf("unknown message kind %s", m.Kind.String())
 	}
-	if m.ID == 0 {
+	if m.MsgID == 0 {
 		return errors.Errorf("require message id")
 	}
 
@@ -43,7 +50,7 @@ func (m *Message) Encode(to *packet.Packet) (err error) {
 	}).Encode(to); err != nil {
 		return err
 	}
-	to.Append(binary.BigEndian.AppendUint32(make([]byte, 0, 4), m.ID)...)
+	to.Append(binary.BigEndian.AppendUint32(make([]byte, 0, 4), m.MsgID)...)
 
 	if m.Raw != nil {
 		switch m.Kind {
@@ -81,7 +88,7 @@ func (m *Message) Decode(from *packet.Packet) error {
 	if from.Data() < 4 {
 		return errors.Errorf("too small %d", from.Data())
 	}
-	m.ID = binary.BigEndian.Uint32(from.Detach(make([]byte, 4)))
+	m.MsgID = binary.BigEndian.Uint32(from.Detach(make([]byte, 4)))
 
 	if from.Data() > 0 {
 		switch m.Kind {
