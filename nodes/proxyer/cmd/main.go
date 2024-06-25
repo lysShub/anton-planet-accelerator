@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"net/netip"
+	"time"
 
 	"github.com/lysShub/anton-planet-accelerator/nodes/proxyer"
 	"github.com/lysShub/netkit/debug"
@@ -27,7 +28,10 @@ func main() {
 	p, err := proxyer.New(":19986", &config)
 	require.NoError(t, err)
 
-	require.NoError(t, p.AddForward(faddr))
+	go func() {
+		time.Sleep(time.Second)
+		require.NoError(t, p.AddForward(faddr))
+	}()
 
 	err = p.Serve()
 	require.NoError(t, err)

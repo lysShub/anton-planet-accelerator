@@ -104,7 +104,7 @@ func (h *Heap[T]) PopByDeadline(fn func(T) bool, deadline time.Time) (T, bool) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.popByLocked(fn, &dead), dead.Load()
+	return h.popByLocked(fn, &dead), !dead.Load()
 }
 
 func (h *Heap[T]) popByLocked(fn func(T) bool, dead *atomic.Bool) (val T) {

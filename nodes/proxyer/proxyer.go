@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"net/netip"
+	"sync/atomic"
 	"time"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
@@ -23,6 +24,7 @@ import (
 
 type Proxyer struct {
 	config *Config
+	start  atomic.Bool
 
 	conn conn.Conn
 	cs   *Clients
@@ -79,13 +81,23 @@ func (p *Proxyer) close(cause error) error {
 	})
 }
 
-func (p *Proxyer) Serve() error {
-	p.config.logger.Info("start", slog.String("listen", p.conn.LocalAddr().String()), slog.Bool("debug", debug.Debug()))
+func (p *Proxyer) Serve() (err error) {
+	defer func() {
+		if err == nil {
+			p.start.Store(true)
+			p.config.logger.Info("start", slog.String("listen", p.conn.LocalAddr().String()), slog.Bool("debug", debug.Debug()))
+		}
+	}()
+
 	go p.donwlinkService()
 	return p.close(p.uplinkService())
 }
 
 func (p *Proxyer) AddForward(faddr netip.AddrPort) error {
+	if !p.start.Load() {
+		return errors.Errorf("proxyer not start")
+	}
+
 	// get forward locatinon by PingForward
 	var pkt = packet.Make()
 	var msg = nodes.Message{MsgID: rand.Uint32()}
