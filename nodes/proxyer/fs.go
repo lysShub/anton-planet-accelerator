@@ -18,7 +18,10 @@ type Forwards struct {
 }
 
 func NewForwards() *Forwards {
-	return &Forwards{fs: map[bvvd.LocID]*Forward{}}
+	return &Forwards{
+		faddrs: map[netip.AddrPort]bvvd.LocID{},
+		fs:     map[bvvd.LocID]*Forward{},
+	}
 }
 
 func (f *Forwards) GetByLocID(loc bvvd.LocID) (*Forward, error) {
@@ -72,6 +75,8 @@ func (f *Forwards) GetByFaddr(faddr netip.AddrPort) (*Forward, error) {
 func (f *Forwards) Add(loc bvvd.LocID, faddr netip.AddrPort) (bvvd.LocID, error) {
 	if !faddr.IsValid() {
 		return 0, errors.Errorf("invalid forward address %s", faddr.String())
+	} else if !loc.Valid() {
+		return 0, errors.Errorf("invalid LocID %s", loc.String())
 	}
 
 	f.mu.Lock()

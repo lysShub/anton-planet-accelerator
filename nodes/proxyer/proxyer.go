@@ -297,7 +297,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 				p.config.logger.Warn(fmt.Sprintf("unknown type %T", msg.Raw), errorx.Trace(nil))
 			}
 		case bvvd.PingForward:
-			if !hdr.Client().IsValid() {
+			if hdr.Client().Addr().IsUnspecified() {
 				// is proxyer add forward PingForard, not set Client
 				var msg nodes.Message
 				if err := msg.Decode(pkt); err != nil {

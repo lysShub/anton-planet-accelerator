@@ -60,7 +60,7 @@ func (l *LocID) SetLoc(loc location) {
 }
 
 func (l LocID) ID() uint8 {
-	return uint8(l) & 0b11110000
+	return (uint8(l)) >> 4
 }
 
 func (l *LocID) SetID(id uint8) error {
