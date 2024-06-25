@@ -31,7 +31,7 @@ func TestXxxx(t *testing.T) {
 		TcpMssDelta: -64,
 		PcapPath:    "client.pcap",
 
-		LocID: bvvd.Moscow,
+		LocID: bvvd.Moscow.LocID(),
 		Proxyers: []netip.AddrPort{
 			netip.MustParseAddrPort("39.106.138.35:19986"), // 莫斯科
 		},

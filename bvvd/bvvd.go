@@ -1,6 +1,6 @@
 package bvvd
 
-//go:generate stringer -output bvvd_gen.go -type=Kind,LocID
+//go:generate stringer -output bvvd_gen.go -type=Kind,location
 
 import (
 	"fmt"
@@ -76,8 +76,8 @@ const Size = 14
 
 func (h *Fields) Valid() bool {
 	ok := h != nil &&
-		h.Server.Is4() && h.Client.Addr().Is4() &&
-		h.Kind.Valid()
+		h.Kind.Valid() &&
+		h.Server.Is4() && h.Client.Addr().Is4()
 	if !ok {
 		return ok
 	}

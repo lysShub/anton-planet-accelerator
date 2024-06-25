@@ -19,6 +19,7 @@ type Config struct {
 
 	PcapPath string
 
+	// 如果LocID是有效值, 表示固定路由
 	LocID    bvvd.LocID
 	Proxyers []netip.AddrPort
 }

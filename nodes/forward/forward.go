@@ -87,6 +87,7 @@ func (f *Forward) recvService() (err error) {
 
 		switch kind := hdr.Kind(); kind {
 		case bvvd.PingForward:
+			hdr.SetLocID(f.location)
 			err := f.conn.WriteToAddrPort(pkt, paddr)
 			if err != nil {
 				return f.close(err)

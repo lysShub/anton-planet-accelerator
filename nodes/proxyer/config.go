@@ -2,10 +2,7 @@ package proxyer
 
 import (
 	"log/slog"
-	"net/netip"
 	"os"
-
-	"github.com/lysShub/anton-planet-accelerator/bvvd"
 )
 
 type Config struct {
@@ -15,11 +12,6 @@ type Config struct {
 	logger  *slog.Logger
 
 	PcapBuiltinPath string
-
-	Forwards []struct {
-		Faddr netip.AddrPort // todo: remove, forward会自己携带
-		LocID bvvd.LocID
-	}
 }
 
 func (c *Config) init() *Config {

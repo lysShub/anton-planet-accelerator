@@ -9,27 +9,20 @@ import (
 	"github.com/pkg/errors"
 )
 
-// todo: optimize to:
-//
-//	type Message1 struct {
-//		bvvd.Fields
-//		MsgID uint32
-//	}
-
 type Message struct {
+	bvvd.Fields
+
 	MsgID uint32
-	Kind  bvvd.Kind
-	LocID bvvd.LocID
-	Raw   any
+	Raw   any // option, store msg data, such as PL
 }
 
 func (m *Message) Encode(to *packet.Packet) (err error) {
 	switch m.Kind {
-	case bvvd.PingProxyer, bvvd.PackLossClientUplink, bvvd.PackLossProxyerDownlink:
-	case bvvd.PingForward, bvvd.PackLossProxyerUplink:
-		if !m.LocID.Valid() {
-			return errors.Errorf("require location %s", m.LocID.String())
-		}
+	case bvvd.PingProxyer:
+	case bvvd.PingForward:
+	case bvvd.PackLossClientUplink:
+	case bvvd.PackLossProxyerUplink:
+	case bvvd.PackLossProxyerDownlink:
 	default:
 		return errors.Errorf("unknown message kind %s", m.Kind.String())
 	}
@@ -37,14 +30,13 @@ func (m *Message) Encode(to *packet.Packet) (err error) {
 		return errors.Errorf("require message id")
 	}
 
-	if err = (&bvvd.Fields{
-		Kind:   m.Kind,
-		Proto:  0,
-		DataID: 0,
-		LocID:  m.LocID,
-		Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0),
-		Server: netip.IPv4Unspecified(),
-	}).Encode(to); err != nil {
+	if !m.Client.IsValid() {
+		m.Client = netip.AddrPortFrom(netip.IPv4Unspecified(), 0)
+	}
+	if !m.Server.IsValid() {
+		m.Server = netip.IPv4Unspecified()
+	}
+	if err := m.Fields.Encode(to); err != nil {
 		return err
 	}
 	to.Append(binary.BigEndian.AppendUint32(make([]byte, 0, 4), m.MsgID)...)

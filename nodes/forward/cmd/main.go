@@ -22,7 +22,7 @@ func main() {
 		MaxRecvBuffSize: 2048,
 	}
 
-	f, err := forward.New(":19986", bvvd.Moscow, config)
+	f, err := forward.New(":19986", bvvd.Moscow.LocID(), config)
 	require.NoError(t, err)
 
 	err = f.Serve()

@@ -13,8 +13,11 @@ import (
 )
 
 type routeCache struct {
+	// fix route mode
 	fixModeProxyer netip.AddrPort
+	fixModeLoc     bvvd.LocID
 
+	// auto route mode
 	location Location
 	mu       sync.RWMutex
 	locs     map[bvvd.LocID]netip.AddrPort // loc:paddr
@@ -25,8 +28,8 @@ type Location interface {
 	Location(addr netip.Addr) (geodist.Coord, error)
 }
 
-func newFixModeRoute(paddr netip.AddrPort) *routeCache {
-	return &routeCache{fixModeProxyer: paddr}
+func newFixModeRoute(paddr netip.AddrPort, loc bvvd.LocID) *routeCache {
+	return &routeCache{fixModeProxyer: paddr, fixModeLoc: loc}
 }
 
 func newAutoModeRoute(loc Location) *routeCache {
@@ -39,7 +42,7 @@ func newAutoModeRoute(loc Location) *routeCache {
 
 func (r *routeCache) Proxyer(saddr netip.Addr) (paddr netip.AddrPort, loc bvvd.LocID, err error) {
 	if r.fixModeProxyer.IsValid() {
-		return r.fixModeProxyer, 0, nil
+		return r.fixModeProxyer, r.fixModeLoc, nil
 	}
 
 	r.mu.RLock()

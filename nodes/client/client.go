@@ -117,13 +117,13 @@ func (c *Client) Start() error {
 
 	if c.config.LocID.Valid() {
 		var start = time.Now()
-		paddr, err := c.routeProbe(c.config.LocID)
+		paddr, loc, err := c.routeProbe(c.config.LocID)
 		if err != nil {
 			c.config.logger.Error(err.Error(), errorx.Trace(err))
 			return err
 		}
 
-		c.route = newFixModeRoute(paddr)
+		c.route = newFixModeRoute(paddr, loc)
 		c.config.logger.Info("start",
 			slog.String("addr", c.laddr.String()),
 			slog.String("network", nodes.ProxyerNetwork),
@@ -144,24 +144,30 @@ func (c *Client) Start() error {
 	return nil
 }
 
-func (c *Client) routeProbe(loc bvvd.LocID) (netip.AddrPort, error) {
+func (c *Client) routeProbe(loc bvvd.LocID) (netip.AddrPort, bvvd.LocID, error) {
 	var msgIds []uint32
+
+	var msg = nodes.Message{}
+	msg.Kind = bvvd.PingForward
+	msg.LocID = loc
+	msg.LocID.SetID(0)
 	for _, paddr := range c.config.Proxyers {
-		id, err := c.messageRequest(paddr, nodes.Message{
-			Kind: bvvd.PingForward, LocID: loc,
-		})
+		id, err := c.messageRequest(paddr, msg)
 		if err != nil {
-			return netip.AddrPort{}, err
+			return netip.AddrPort{}, 0, err
 		}
 		msgIds = append(msgIds, id)
 	}
 
 	var idx int
-	c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
+	m, pop := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
 		idx = slices.Index(msgIds, m.MsgID)
 		return idx >= 0
 	}, time.Second*3)
-	return c.config.Proxyers[idx], nil
+	if !pop {
+		return netip.AddrPort{}, 0, errors.Errorf("ping fowrard %s timeout", loc.Loc().String())
+	}
+	return c.config.Proxyers[idx], m.LocID, nil
 }
 
 func (c *Client) messageRequest(paddr netip.AddrPort, msg nodes.Message) (msgId uint32, err error) {
@@ -180,18 +186,25 @@ func (c *Client) messageRequest(paddr netip.AddrPort, msg nodes.Message) (msgId 
 
 func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err error) {
 	var (
-		start                = time.Now()
-		paddr netip.AddrPort = c.config.Proxyers[0] // todo
-		loc   bvvd.LocID     = c.config.LocID
-		kinds                = []bvvd.Kind{
+		start = time.Now()
+		kinds = []bvvd.Kind{
 			bvvd.PingProxyer, bvvd.PingForward, bvvd.PackLossClientUplink,
 			bvvd.PackLossProxyerUplink, bvvd.PackLossProxyerDownlink,
 		}
 	)
 
+	// todo: 获取标准性的地址
+	paddr, loc, err := c.route.Proxyer(netip.IPv4Unspecified())
+	if err != nil {
+		return nil, err
+	}
+
 	var ids []uint32
+	msg := nodes.Message{}
+	msg.LocID = loc
 	for _, kind := range kinds {
-		id, err := c.messageRequest(paddr, nodes.Message{Kind: kind, LocID: loc})
+		msg.Kind = kind
+		id, err := c.messageRequest(paddr, msg)
 		if err != nil {
 			return nil, err
 		}

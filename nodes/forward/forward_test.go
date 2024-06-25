@@ -20,7 +20,7 @@ func TestXxxx(t *testing.T) {
 		MaxRecvBuffSize: 1536,
 	}
 
-	f, err := forward.New(":19986", bvvd.Moscow, config)
+	f, err := forward.New(":19986", bvvd.Moscow.LocID(), config)
 	require.NoError(t, err)
 
 	err = f.Serve()
