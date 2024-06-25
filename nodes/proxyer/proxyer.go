@@ -82,12 +82,10 @@ func (p *Proxyer) close(cause error) error {
 }
 
 func (p *Proxyer) Serve() (err error) {
-	defer func() {
-		if err == nil {
-			p.start.Store(true)
-			p.config.logger.Info("start", slog.String("listen", p.conn.LocalAddr().String()), slog.Bool("debug", debug.Debug()))
-		}
-	}()
+	if p.start.Swap(true) {
+		return errors.Errorf("proxyer started")
+	}
+	p.config.logger.Info("start", slog.String("listen", p.conn.LocalAddr().String()), slog.Bool("debug", debug.Debug()))
 
 	go p.donwlinkService()
 	return p.close(p.uplinkService())

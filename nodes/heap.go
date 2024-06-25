@@ -95,7 +95,7 @@ func (h *Heap[T]) PopBy(fn func(e T) (pop bool)) (val T) {
 	return h.popByLocked(fn, nil)
 }
 
-func (h *Heap[T]) PopByDeadline(fn func(T) bool, deadline time.Time) (T, bool) {
+func (h *Heap[T]) PopByDeadline(fn func(T) bool, deadline time.Time) (val T, ok bool) {
 	var dead atomic.Bool
 	defer time.AfterFunc(time.Until(deadline), func() {
 		dead.Store(true)

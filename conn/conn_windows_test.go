@@ -24,8 +24,6 @@ func TestClient(t *testing.T) {
 		err = conn.WriteToAddrPort(b, dst)
 		require.NoError(t, err)
 
-		fmt.Println("send", i)
-
 		src, err := conn.ReadFromAddrPort(b.Sets(0, 0xffff))
 		require.NoError(t, err)
 

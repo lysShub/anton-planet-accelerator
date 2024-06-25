@@ -87,7 +87,10 @@ func (f *Forward) recvService() (err error) {
 
 		switch kind := hdr.Kind(); kind {
 		case bvvd.PingForward:
-			hdr.SetLocID(f.location)
+			id := hdr.LocID()
+			id.SetLoc(f.location.Loc())
+			hdr.SetLocID(id)
+
 			err := f.conn.WriteToAddrPort(pkt, paddr)
 			if err != nil {
 				return f.close(err)
@@ -121,7 +124,7 @@ func (f *Forward) recvService() (err error) {
 
 			// read/create corresponding link, the link will self close by keepalive,
 			// so if Send/Recv return net.ErrClosed error should ignore.
-			link, new, err := f.links.Link(ep, paddr, f.location)
+			link, new, err := f.links.Link(ep, paddr, hdr.LocID())
 			if err != nil {
 				return f.close(err)
 			} else if new {

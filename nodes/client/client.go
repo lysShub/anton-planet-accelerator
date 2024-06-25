@@ -129,6 +129,7 @@ func (c *Client) Start() error {
 			slog.String("network", nodes.ProxyerNetwork),
 			slog.String("mode", "fix"),
 			slog.String("proxyer", paddr.String()),
+			slog.String("location", loc.String()),
 			slog.String("rtt", time.Since(start).String()),
 			slog.Bool("debug", debug.Debug()),
 		)
@@ -160,11 +161,11 @@ func (c *Client) routeProbe(loc bvvd.LocID) (netip.AddrPort, bvvd.LocID, error) 
 	}
 
 	var idx int
-	m, pop := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
+	m, ok := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
 		idx = slices.Index(msgIds, m.MsgID)
 		return idx >= 0
 	}, time.Second*3)
-	if !pop {
+	if !ok {
 		return netip.AddrPort{}, 0, errors.Errorf("ping fowrard %s timeout", loc.Loc().String())
 	}
 	return c.config.Proxyers[idx], m.LocID, nil
@@ -213,10 +214,10 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 
 	stats = &NetworkStates{}
 	for i := 0; i < len(kinds); i++ {
-		msg, timeout := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
+		msg, ok := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
 			return slices.Contains(ids, m.MsgID)
 		}, time.Second*3)
-		if timeout {
+		if !ok {
 			err = errorx.WrapTemp(errors.New("timeout"))
 			break
 		}
@@ -304,7 +305,6 @@ func (c *Client) captureService() (_ error) {
 		hdr.Proto = uint8(s.Proto)
 		hdr.Server = s.Dst.Addr()
 		hdr.DataID = uint8(c.uplinkId.Add(1))
-		hdr.Encode(ip)
 
 		if debug.Debug() && rand.Int()%100 == 99 {
 			continue // PackLossClientUplink
@@ -313,11 +313,15 @@ func (c *Client) captureService() (_ error) {
 		paddr, loc, err := c.route.Proxyer(hdr.Server)
 		if err != nil {
 			c.config.logger.Error(err.Error(), errorx.Trace(err))
-		} else if loc.Valid() {
+		} else if !loc.Valid() {
 			c.routeProbe(loc) // todo: 异步
 			panic("")
 		}
 
+		hdr.LocID = loc
+		if err := hdr.Encode(ip); err != nil {
+			return c.close(err)
+		}
 		if err = c.conn.WriteToAddrPort(ip, paddr); err != nil {
 			return c.close(err)
 		}

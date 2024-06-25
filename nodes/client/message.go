@@ -49,7 +49,7 @@ func (m *messageManager) PopByID(id uint32) nodes.Message {
 	return m.buff.PopBy(func(e nodes.Message) (pop bool) { return e.MsgID == id })
 }
 
-func (m *messageManager) PopBy(fn func(nodes.Message) (pop bool), timeout time.Duration) (nodes.Message, bool) {
+func (m *messageManager) PopBy(fn func(nodes.Message) (pop bool), timeout time.Duration) (smg nodes.Message, ok bool) {
 	return m.buff.PopByDeadline(fn, time.Now().Add(timeout))
 }
 

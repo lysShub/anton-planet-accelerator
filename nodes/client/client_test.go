@@ -46,7 +46,7 @@ func TestXxxx(t *testing.T) {
 	c, err := client.New(config)
 	require.NoError(t, err)
 
-	c.Start()
+	require.NoError(t, c.Start())
 
 	for {
 		stats, err := c.NetworkStats(time.Second)
