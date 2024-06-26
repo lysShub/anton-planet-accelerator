@@ -87,7 +87,17 @@ func (f *Forward) uplinkService() (err error) {
 
 		switch kind := hdr.Kind(); kind {
 		case bvvd.PingForward:
-			hdr.SetForwardID(f.forwardID)
+			var msg nodes.Message
+			if err := msg.Decode(pkt); err != nil {
+				f.config.logger.Error(err.Error(), errorx.Trace(err))
+				continue
+			}
+			msg.ForwardID = f.forwardID
+			msg.Payload = f.config.Location
+			if err := msg.Encode(pkt.SetData(0)); err != nil {
+				f.config.logger.Error(err.Error(), errorx.Trace(err))
+				continue
+			}
 
 			if err := f.conn.WriteToAddrPort(pkt, paddr); err != nil {
 				return f.close(err)

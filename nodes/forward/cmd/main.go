@@ -20,6 +20,7 @@ func main() {
 
 	config := &forward.Config{
 		Location:        bvvd.Moscow,
+		ForwardID:       1,
 		MaxRecvBuffSize: 2048,
 	}
 

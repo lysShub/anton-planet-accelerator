@@ -98,7 +98,7 @@ func (p *Proxyer) AddForward(faddr netip.AddrPort) error {
 
 	// get forward locatinon by PingForward
 	var pkt = packet.Make()
-	var msg = nodes.Message{MsgID: rand.Uint32()}
+	var msg = nodes.Message{MsgID: rand.Uint32(), Payload: bvvd.Location(0)}
 	msg.Kind = bvvd.PingForward
 	if err := msg.Encode(pkt); err != nil {
 		return err
