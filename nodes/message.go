@@ -25,7 +25,7 @@ func (m *Message) Encode(to *packet.Packet) (err error) {
 	case bvvd.PingProxyer:
 	case bvvd.PingForward:
 		if !m.ForwardID.Vaid() && m.Payload == nil {
-			return errors.Errorf("PingForward message require ForwardID or Raw")
+			return errors.Errorf("PingForward message require ForwardID or Payload")
 		}
 	case bvvd.PackLossClientUplink:
 	case bvvd.PackLossProxyerUplink:
@@ -74,39 +74,42 @@ func (m *Message) Encode(to *packet.Packet) (err error) {
 }
 
 func (m *Message) Decode(from *packet.Packet) error {
-	var hdr bvvd.Fields
-	if err := hdr.Decode(from); err != nil {
+	if err := m.Fields.Decode(from); err != nil {
 		return err
 	}
-	m.Kind = hdr.Kind
-	m.ForwardID = hdr.ForwardID
-	switch m.Kind {
-	case bvvd.PingProxyer, bvvd.PackLossClientUplink, bvvd.PackLossProxyerDownlink:
-	case bvvd.PingForward, bvvd.PackLossProxyerUplink:
-		if !m.ForwardID.Vaid() && m.Payload == nil {
-			return errors.Errorf("PingForward message require ForwardID or Raw")
-		}
-	default:
-		return errors.Errorf("unknown message kind %s", m.Kind.String())
+	if !m.Client.IsValid() {
+		m.Client = netip.AddrPortFrom(netip.IPv4Unspecified(), 0)
+	}
+	if !m.Server.IsValid() {
+		m.Server = netip.IPv4Unspecified()
 	}
 
 	if from.Data() < 4 {
 		return errors.Errorf("too small %d", from.Data())
 	}
 	m.MsgID = binary.BigEndian.Uint32(from.Detach(make([]byte, 4)))
+	if m.MsgID == 0 {
+		return errors.Errorf("invalid message id")
+	}
 
-	if from.Data() > 0 {
-		switch m.Kind {
-		case bvvd.PackLossClientUplink, bvvd.PackLossProxyerUplink, bvvd.PackLossProxyerDownlink:
+	switch m.Kind {
+	case bvvd.PingProxyer:
+	case bvvd.PingForward:
+		if from.Data() > 0 {
+			m.Payload = bvvd.Location(from.Bytes()[0])
+		} else if !m.ForwardID.Vaid() {
+			return errors.Errorf("PingForward message require ForwardID or Payload")
+		}
+	case bvvd.PackLossProxyerUplink, bvvd.PackLossClientUplink, bvvd.PackLossProxyerDownlink:
+		if from.Data() > 0 {
 			var pl PL
 			if err := pl.Decode(from); err != nil {
 				return err
 			}
 			m.Payload = pl
-		case bvvd.PingForward:
-			m.Payload = bvvd.Location(from.Bytes()[0])
-		default:
 		}
+	default:
+		return errors.Errorf("unknown message kind %s", m.Kind.String())
 	}
 	return nil
 }
