@@ -34,7 +34,7 @@ func Test_Checksum(t *testing.T) {
 		WindowSize: uint16(rand.Uint32()),
 	})
 
-	nodes.ChecksumClient(pkt, header.TCPProtocolNumber, server.Addr())
+	nodes.ChecksumClient(pkt, syscall.IPPROTO_TCP, server.Addr())
 
 	ok := nodes.ValidChecksum(pkt, 17, server.Addr())
 	require.True(t, ok)

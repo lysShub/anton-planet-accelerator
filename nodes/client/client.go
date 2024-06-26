@@ -10,17 +10,17 @@ import (
 	"net/netip"
 	"slices"
 	"sync/atomic"
+	"syscall"
 	"time"
 
-	accelerator "github.com/lysShub/anton-planet-accelerator"
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/conn"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
-	"github.com/lysShub/divert-go"
+	"github.com/lysShub/anton-planet-accelerator/nodes/client/game"
+	"github.com/lysShub/anton-planet-accelerator/nodes/client/inject"
 	"github.com/lysShub/fatun"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
-	mapping "github.com/lysShub/netkit/mapping/process"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/netkit/pcap"
 	"github.com/pkg/errors"
@@ -31,17 +31,16 @@ import (
 type Client struct {
 	config *Config
 	laddr  netip.AddrPort
+	start  atomic.Bool
 
-	mapping mapping.Mapping
-
-	capture *divert.Handle
-	inbound divert.Address
+	game   game.Game
+	inject inject.Inject
 
 	conn       conn.Conn
 	uplinkId   atomic.Uint32
 	downlinkPL *nodes.PLStats
 
-	route *routeCache
+	route *route
 
 	msgMgr *messageManager
 
@@ -58,27 +57,19 @@ func New(config *Config) (*Client, error) {
 	}
 	var err error
 
+	if c.game, err = game.New(config.Name); err != nil {
+		return nil, c.close(err)
+	}
+
+	if c.inject, err = inject.New(); err != nil {
+		return nil, c.close(err)
+	}
+
 	c.conn, err = conn.Bind(nodes.ProxyerNetwork, "")
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, c.close(err)
 	}
 	c.laddr = c.conn.LocalAddr()
-
-	if c.mapping, err = mapping.New(); err != nil {
-		return nil, c.close(err)
-	}
-
-	var filter = "outbound and !loopback and ip and (tcp or udp)"
-	c.capture, err = divert.Open(filter, divert.Network, 0, 0)
-	if err != nil {
-		return nil, c.close(err)
-	}
-	if ifi, err := defaultAdapter(); err != nil {
-		return nil, err
-	} else {
-		c.inbound.SetOutbound(false)
-		c.inbound.Network().IfIdx = uint32(ifi.Index)
-	}
 
 	if config.PcapPath != "" {
 		c.pcap, err = pcap.File(config.PcapPath)
@@ -101,21 +92,24 @@ func (c *Client) close(cause error) error {
 		if c.conn != nil {
 			errs = append(errs, c.conn.Close())
 		}
-		if c.mapping != nil {
-			errs = append(errs, c.mapping.Close())
+		if c.game != nil {
+			errs = append(errs, c.game.Close())
 		}
-		if c.capture != nil {
-			errs = append(errs, c.capture.Close())
+		if c.inject != nil {
+			errs = append(errs, c.inject.Close())
 		}
 		return errs
 	})
 }
 
 func (c *Client) Start() error {
-	go c.captureService()
-	go c.injectServic()
+	if c.start.Swap(true) {
+		return errors.Errorf("client started")
+	}
+	go c.downlinkServic()
+	go c.uplinkService()
 
-	if c.config.LocID.Valid() {
+	if c.config.FixRoute {
 		var start = time.Now()
 		paddr, loc, err := c.routeProbe(c.config.LocID)
 		if err != nil {
@@ -142,6 +136,7 @@ func (c *Client) Start() error {
 			slog.Bool("debug", debug.Debug()),
 		)
 	}
+
 	return nil
 }
 
@@ -195,7 +190,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 	)
 
 	// todo: 获取标准性的地址
-	paddr, loc, err := c.route.Proxyer(netip.IPv4Unspecified())
+	paddr, loc, err := c.route.Match(netip.IPv4Unspecified())
 	if err != nil {
 		return nil, err
 	}
@@ -243,11 +238,10 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 	return stats, err
 }
 
-func (c *Client) captureService() (_ error) {
+func (c *Client) uplinkService() (_ error) {
 	var (
-		addr divert.Address
-		ip   = packet.Make(0, c.config.MaxRecvBuff)
-		hdr  = bvvd.Fields{
+		pkt = packet.Make(0, c.config.MaxRecvBuff)
+		hdr = bvvd.Fields{
 			Kind:   bvvd.Data,
 			LocID:  c.config.LocID,
 			Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0),
@@ -256,79 +250,53 @@ func (c *Client) captureService() (_ error) {
 	)
 
 	for {
-		n, err := c.capture.Recv(ip.Sets(head, 0xffff).Bytes(), &addr)
-		if err != nil {
-			return c.close(err)
-		} else if n == 0 {
-			continue
-		}
-		ip.SetData(n)
 
-		s, err := fatun.StripIP(ip)
+		info, err := c.game.Capture(pkt.Sets(head, 0xffff))
 		if err != nil {
 			return c.close(err)
 		}
 
-		pass := s.Dst.Addr().IsMulticast()
-		if !pass {
-			name, err := c.mapping.Name(s.Src, uint8(s.Proto))
-			if err != nil {
-				if errorx.Temporary(err) {
-					// if debug.Debug() {
-					// 	c.config.logger.Warn("not mapping", slog.String("session", s.String()))
-					// }
-					pass = false
-				} else {
-					return c.close(err)
-				}
-			} else {
-				pass = name != accelerator.Warthunder
-			}
-		}
-		if pass {
-			if _, err = c.capture.Send(ip.SetHead(head).Bytes(), &addr); err != nil {
-				return c.close(err)
-			}
-			continue
+		if info.Proto == syscall.IPPROTO_TCP {
+			fatun.UpdateTcpMssOption(pkt.Bytes(), c.config.TcpMssDelta)
 		}
 
-		if s.Proto == header.TCPProtocolNumber {
-			fatun.UpdateTcpMssOption(ip.Bytes(), c.config.TcpMssDelta)
-		}
 		if c.pcap != nil {
-			head1 := ip.Head()
-			c.pcap.WriteIP(ip.SetHead(head).Bytes())
-			ip.SetHead(head1)
+			head1 := pkt.Head()
+			c.pcap.WriteIP(pkt.SetHead(head).Bytes())
+			pkt.SetHead(head1)
 		}
 
-		nodes.ChecksumClient(ip, s.Proto, s.Dst.Addr())
-		hdr.Proto = uint8(s.Proto)
-		hdr.Server = s.Dst.Addr()
+		nodes.ChecksumClient(pkt, info.Proto, info.Server)
+		hdr.Proto = info.Proto
+		hdr.Server = info.Server
 		hdr.DataID = uint8(c.uplinkId.Add(1))
 
 		if debug.Debug() && rand.Int()%100 == 99 {
 			continue // PackLossClientUplink
 		}
 
-		paddr, loc, err := c.route.Proxyer(hdr.Server)
-		if err != nil {
-			c.config.logger.Error(err.Error(), errorx.Trace(err))
-		} else if !loc.Valid() {
-			c.routeProbe(loc) // todo: 异步
-			panic("")
+		var paddr netip.AddrPort
+		if c.config.FixRoute || !info.PlayData {
+			paddr, hdr.LocID = c.route.Default()
+		} else {
+			paddr, hdr.LocID, err = c.route.Match(hdr.Server)
+			if errorx.Temporary(err) {
+				continue // route probing
+			} else if err != nil {
+				return c.close(err)
+			}
 		}
 
-		hdr.LocID = loc
-		if err := hdr.Encode(ip); err != nil {
+		if err := hdr.Encode(pkt); err != nil {
 			return c.close(err)
 		}
-		if err = c.conn.WriteToAddrPort(ip, paddr); err != nil {
+		if err = c.conn.WriteToAddrPort(pkt, paddr); err != nil {
 			return c.close(err)
 		}
 	}
 }
 
-func (c *Client) injectServic() (_ error) {
+func (c *Client) downlinkServic() (_ error) {
 	var (
 		laddr = tcpip.AddrFrom4(c.laddr.Addr().As4())
 		pkt   = packet.Make(0, c.config.MaxRecvBuff)
@@ -352,11 +320,13 @@ func (c *Client) injectServic() (_ error) {
 		}
 
 		c.downlinkPL.ID(int(hdr.DataID()))
+
+		pkt.DetachN(bvvd.Size)
 		if hdr.Proto() == uint8(header.TCPProtocolNumber) {
 			fatun.UpdateTcpMssOption(pkt.Bytes(), c.config.TcpMssDelta)
 		}
 
-		ip := header.IPv4(pkt.AttachN(-bvvd.Size + header.IPv4MinimumSize).Bytes())
+		ip := header.IPv4(pkt.AttachN(header.IPv4MinimumSize).Bytes())
 		ip.Encode(&header.IPv4Fields{
 			TotalLength: uint16(pkt.Data()),
 			TTL:         64,
@@ -370,8 +340,7 @@ func (c *Client) injectServic() (_ error) {
 			c.pcap.WriteIP(ip)
 		}
 
-		_, err = c.capture.Send(ip, &c.inbound)
-		if err != nil {
+		if err := c.inject.Inject(ip); err != nil {
 			return c.close(err)
 		}
 	}

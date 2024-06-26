@@ -21,12 +21,12 @@ import (
 		server 不计算checksum, 在client重新计算。
 */
 
-func ChecksumClient(pkt *packet.Packet, proto tcpip.TransportProtocolNumber, dst netip.Addr) {
+func ChecksumClient(pkt *packet.Packet, proto uint8, dst netip.Addr) {
 	var t header.Transport
 	switch proto {
-	case header.TCPProtocolNumber:
+	case syscall.IPPROTO_TCP:
 		t = header.TCP(pkt.Bytes())
-	case header.UDPProtocolNumber:
+	case syscall.IPPROTO_UDP:
 		t = header.UDP(pkt.Bytes())
 	default:
 		panic(fmt.Sprintf("not support protocole %d", proto))
@@ -36,7 +36,7 @@ func ChecksumClient(pkt *packet.Packet, proto tcpip.TransportProtocolNumber, dst
 	t.SetSourcePort(0)
 	t.SetChecksum(0)
 	sum := header.PseudoHeaderChecksum(
-		proto,
+		tcpip.TransportProtocolNumber(proto),
 		ip4zero,
 		tcpip.AddrFrom4(dst.As4()),
 		uint16(pkt.Data()),

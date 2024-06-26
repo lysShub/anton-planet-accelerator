@@ -9,13 +9,14 @@ import (
 
 	"github.com/jftuga/geodist"
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
+	"github.com/lysShub/netkit/debug"
 	"github.com/pkg/errors"
 )
 
-type routeCache struct {
-	// fix route mode
-	fixModeProxyer netip.AddrPort
-	fixModeLoc     bvvd.LocID
+type route struct {
+	fixRoutMode    bool
+	defaultProxyer netip.AddrPort
+	defaultLoc     bvvd.LocID
 
 	// auto route mode
 	location Location
@@ -28,21 +29,29 @@ type Location interface {
 	Location(addr netip.Addr) (geodist.Coord, error)
 }
 
-func newFixModeRoute(paddr netip.AddrPort, loc bvvd.LocID) *routeCache {
-	return &routeCache{fixModeProxyer: paddr, fixModeLoc: loc}
-}
-
-func newAutoModeRoute(loc Location) *routeCache {
-	return &routeCache{
-		location: loc,
-		locs:     map[bvvd.LocID]netip.AddrPort{},
-		routes:   map[netip.Addr]netip.AddrPort{},
+func newFixModeRoute(paddr netip.AddrPort, loc bvvd.LocID) *route {
+	return &route{
+		fixRoutMode:    true,
+		defaultProxyer: paddr, defaultLoc: loc,
 	}
 }
 
-func (r *routeCache) Proxyer(saddr netip.Addr) (paddr netip.AddrPort, loc bvvd.LocID, err error) {
-	if r.fixModeProxyer.IsValid() {
-		return r.fixModeProxyer, r.fixModeLoc, nil
+func newAutoModeRoute(loc Location) *route {
+	return &route{
+		fixRoutMode: false,
+		location:    loc,
+		locs:        map[bvvd.LocID]netip.AddrPort{},
+		routes:      map[netip.Addr]netip.AddrPort{},
+	}
+}
+
+func (r *route) Default() (paddr netip.AddrPort, loc bvvd.LocID) {
+	return r.defaultProxyer, r.defaultLoc
+}
+
+func (r *route) Match(saddr netip.Addr) (paddr netip.AddrPort, loc bvvd.LocID, err error) {
+	if r.fixRoutMode {
+		return r.defaultProxyer, r.defaultLoc, nil
 	}
 
 	r.mu.RLock()
@@ -56,23 +65,23 @@ func (r *routeCache) Proxyer(saddr netip.Addr) (paddr netip.AddrPort, loc bvvd.L
 	if err != nil {
 		return netip.AddrPort{}, 0, err
 	}
-	rec, offset := bvvd.Locs.Match(coord)
-	if offset > 2000 {
-		return netip.AddrPort{}, 0, errors.Errorf("not proxyer server to %s", saddr.String())
+	rec, offset := bvvd.Forwards.Match(coord)
+	if debug.Debug() && offset > 500 {
+		println(fmt.Sprintf("forward %s offset to %s too large", rec.Location.String(), saddr.String()))
 	}
 
 	r.mu.RLock()
-	paddr = r.locs[rec.ID]
+	paddr = r.locs[rec.Location.LocID()]
 	r.mu.RUnlock()
 
 	if !paddr.IsValid() {
-		return netip.AddrPort{}, rec.ID, nil
+		return netip.AddrPort{}, rec.Location.LocID(), nil
 	}
 	return paddr, 0, nil
 }
 
-func (r *routeCache) AddRecord(saddr netip.Addr, loc bvvd.LocID, paddr netip.AddrPort) {
-	if r.fixModeProxyer.IsValid() {
+func (r *route) AddRecord(saddr netip.Addr, loc bvvd.LocID, paddr netip.AddrPort) {
+	if r.defaultProxyer.IsValid() {
 		panic("fix route mode not need")
 	}
 	r.mu.Lock()

@@ -2,15 +2,15 @@ package client
 
 import (
 	"log/slog"
-	"net"
 	"net/netip"
 	"os"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
-	"github.com/pkg/errors"
 )
 
 type Config struct {
+	Name string
+
 	MaxRecvBuff int
 	TcpMssDelta int
 
@@ -19,7 +19,7 @@ type Config struct {
 
 	PcapPath string
 
-	// 如果LocID是有效值, 表示固定路由
+	FixRoute bool
 	LocID    bvvd.LocID
 	Proxyers []netip.AddrPort
 }
@@ -38,38 +38,4 @@ func (c *Config) init() *Config {
 	c.logger = slog.New(slog.NewJSONHandler(fh, nil))
 
 	return c
-}
-
-// todo: optimzie
-func defaultAdapter() (*net.Interface, error) {
-	conn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.IP{8, 8, 8, 8}, Port: 53})
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	defer conn.Close()
-	laddr := netip.MustParseAddrPort(conn.LocalAddr().String()).Addr().As4()
-
-	ifs, err := net.Interfaces()
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	for _, i := range ifs {
-		if i.Flags&net.FlagRunning == 0 {
-			continue
-		}
-
-		addrs, err := i.Addrs()
-		if err != nil {
-			return nil, errors.WithStack(err)
-		}
-		for _, addr := range addrs {
-			if e, ok := addr.(*net.IPNet); ok && e.IP.To4() != nil {
-				if [4]byte(e.IP.To4()) == laddr {
-					return &i, nil
-				}
-			}
-		}
-	}
-
-	return nil, errors.Errorf("not found default adapter")
 }

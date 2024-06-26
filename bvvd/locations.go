@@ -8,16 +8,16 @@ import (
 	"github.com/pkg/errors"
 )
 
-type Location struct {
-	Loc geodist.Coord
-	ID  LocID
+type Forward struct {
+	Coord    geodist.Coord
+	Location location
 }
 
-var Locs = locations{
-	{geodist.Coord{Lat: 55.769, Lon: 37.586}, Moscow.LocID()},
-	{geodist.Coord{Lat: 50.103, Lon: 8.679}, Frankfurt.LocID()},
-	{geodist.Coord{Lat: 35.699, Lon: 139.774}, Tokyo.LocID()},
-	{geodist.Coord{Lat: 40.716, Lon: -74.017}, NewYork.LocID()},
+var Forwards = forwards{
+	{geodist.Coord{Lat: 55.769, Lon: 37.586}, Moscow.LocID().Loc()},
+	{geodist.Coord{Lat: 50.103, Lon: 8.679}, Frankfurt.LocID().Loc()},
+	{geodist.Coord{Lat: 35.699, Lon: 139.774}, Tokyo.LocID().Loc()},
+	{geodist.Coord{Lat: 40.716, Lon: -74.017}, NewYork.LocID().Loc()},
 }
 
 // LocID
@@ -79,16 +79,15 @@ func (l LocID) Valid() bool {
 	return l.Loc() > 0
 }
 
-type locations []Location
+type forwards []Forward
 
-func (ls locations) Match(dst geodist.Coord) (Location, float64) {
+func (ls forwards) Match(dst geodist.Coord) (Forward, float64) {
 	var dist float64 = math.MaxFloat64
 	var idx int
 	for i, e := range ls {
-		_, d := geodist.HaversineDistance(e.Loc, dst)
+		_, d := geodist.HaversineDistance(e.Coord, dst)
 		if d < dist {
-			dist = d
-			idx = i
+			dist, idx = d, i
 		}
 	}
 	return ls[idx], dist
