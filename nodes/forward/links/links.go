@@ -21,13 +21,13 @@ func NewLinks() *Links {
 	return &Links{links: map[Endpoint]*Link{}}
 }
 
-func (ls *Links) Link(ep Endpoint, paddr netip.AddrPort, loc bvvd.LocID) (l *Link, new bool, err error) {
+func (ls *Links) Link(ep Endpoint, paddr netip.AddrPort, forwardID bvvd.ForwardID) (l *Link, new bool, err error) {
 	ls.mu.RLock()
 	l = ls.links[ep]
 	ls.mu.RUnlock()
 
 	if l == nil {
-		l, err = newLink(ls, ep, paddr, loc)
+		l, err = newLink(ls, ep, paddr, forwardID)
 		if err != nil {
 			return nil, false, err
 		}

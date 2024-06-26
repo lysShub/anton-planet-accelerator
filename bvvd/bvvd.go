@@ -32,10 +32,10 @@ func (b Bvvd) DataID() uint8 {
 func (b Bvvd) SetDataID(id uint8) {
 	b[2] = id
 }
-func (b Bvvd) LocID() LocID {
-	return LocID(b[3])
+func (b Bvvd) ForwardID() ForwardID {
+	return ForwardID(b[3])
 }
-func (b Bvvd) SetLocID(loc LocID) {
+func (b Bvvd) SetForwardID(loc ForwardID) {
 	b[3] = byte(loc)
 }
 func (b Bvvd) Client() netip.AddrPort {
@@ -63,12 +63,12 @@ func (b Bvvd) SetServer(server netip.Addr) {
 }
 
 type Fields struct {
-	Kind   Kind
-	Proto  uint8
-	DataID uint8
-	LocID  LocID // forward location id
-	Client netip.AddrPort
-	Server netip.Addr
+	Kind      Kind
+	Proto     uint8
+	DataID    uint8
+	ForwardID ForwardID // forward id
+	Client    netip.AddrPort
+	Server    netip.Addr
 }
 
 const MaxID = 0xff
@@ -103,7 +103,7 @@ func (h *Fields) Encode(to *packet.Packet) error {
 	to.Attach(h.Server.AsSlice()...)
 	to.Attach(h.Client.Addr().AsSlice()...)
 	to.Attach(byte(h.Client.Port()), byte(h.Client.Port()>>8))
-	to.Attach(byte(h.LocID))
+	to.Attach(byte(h.ForwardID))
 	to.Attach(h.DataID)
 	to.Attach(h.Proto)
 	to.Attach(byte(h.Kind))
@@ -119,7 +119,7 @@ func (h *Fields) Decode(from *packet.Packet) error {
 	h.Kind = Kind(b[0])
 	h.Proto = b[1]
 	h.DataID = b[2]
-	h.LocID = LocID(b[3])
+	h.ForwardID = ForwardID(b[3])
 	h.Client = netip.AddrPortFrom(
 		netip.AddrFrom4([4]byte(b[6:])),
 		uint16(b[4])+uint16(b[5])<<8,
@@ -141,11 +141,30 @@ func (k Kind) Valid() bool {
 
 const (
 	_ Kind = iota
+
+	// payload transmit data
+	// 必须要设置ForwardID
 	Data
-	PingProxyer             // rtt client  <--> proxyer
-	PingForward             // rtt client  <--> forward
-	PackLossClientUplink    // pl  client  ---> proxyer
-	PackLossProxyerUplink   // pl  proxyer ---> forward
-	PackLossProxyerDownlink // pl  forward ---> proxyer
+
+	// rtt client  <--> proxyer
+	PingProxyer
+
+	// rtt client  <--> forward
+	// 此数据包除了延时、还有探测路由的作用，如果Clinet发送时没有设置ForwardID, 那么应该负载Location
+	// Forward 回复此数据包时，必须负载ForwardID
+	PingForward
+
+	// pl  client  ---> proxyer
+	PackLossClientUplink
+
+	// pl  proxyer ---> forward
+	PackLossProxyerUplink
+
+	// pl  forward ---> proxyer
+	PackLossProxyerDownlink
 	_kind_end
 )
+
+type ForwardID uint8
+
+func (f ForwardID) Vaid() bool { return f != 0 }

@@ -53,6 +53,7 @@ func New(config *Config) (*Client, error) {
 	var c = &Client{
 		config:     config.init(),
 		downlinkPL: nodes.NewPLStats(bvvd.MaxID),
+		route:      newRoute(config.FixRoute),
 		msgMgr:     newMessageManager(),
 	}
 	var err error
@@ -109,44 +110,33 @@ func (c *Client) Start() error {
 	go c.downlinkServic()
 	go c.uplinkService()
 
-	if c.config.FixRoute {
-		var start = time.Now()
-		paddr, loc, err := c.routeProbe(c.config.LocID)
-		if err != nil {
-			c.config.logger.Error(err.Error(), errorx.Trace(err))
-			return err
-		}
-
-		c.route = newFixModeRoute(paddr, loc)
-		c.config.logger.Info("start",
-			slog.String("addr", c.laddr.String()),
-			slog.String("network", nodes.ProxyerNetwork),
-			slog.String("mode", "fix"),
-			slog.String("proxyer", paddr.String()),
-			slog.String("location", loc.String()),
-			slog.String("rtt", time.Since(start).String()),
-			slog.Bool("debug", debug.Debug()),
-		)
-	} else {
-		c.route = newAutoModeRoute(T)
-		c.config.logger.Info("start",
-			slog.String("addr", c.laddr.String()),
-			slog.String("network", nodes.ProxyerNetwork),
-			slog.String("mode", "auto"),
-			slog.Bool("debug", debug.Debug()),
-		)
+	var start = time.Now()
+	paddr, forward, err := c.routeProbe(c.config.Location, time.Second*3)
+	if err != nil {
+		c.config.logger.Error(err.Error(), errorx.Trace(err))
+		return err
 	}
 
+	c.route.Init(paddr, forward)
+	c.config.logger.Info("start",
+		slog.String("addr", c.laddr.String()),
+		slog.String("network", nodes.ProxyerNetwork),
+		slog.String("mode", "fix"),
+		slog.String("proxyer", paddr.String()),
+		slog.String("location", c.config.Location.String()),
+		slog.String("rtt", time.Since(start).String()),
+		slog.Bool("debug", debug.Debug()),
+	)
 	return nil
 }
 
-func (c *Client) routeProbe(loc bvvd.LocID) (netip.AddrPort, bvvd.LocID, error) {
+func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (paddr netip.AddrPort, forward bvvd.ForwardID, err error) {
 	var msgIds []uint32
 
 	var msg = nodes.Message{}
 	msg.Kind = bvvd.PingForward
-	msg.LocID = loc
-	msg.LocID.SetID(0)
+	msg.ForwardID = 0
+	msg.Payload = loc
 	for _, paddr := range c.config.Proxyers {
 		id, err := c.messageRequest(paddr, msg)
 		if err != nil {
@@ -159,11 +149,11 @@ func (c *Client) routeProbe(loc bvvd.LocID) (netip.AddrPort, bvvd.LocID, error) 
 	m, ok := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
 		idx = slices.Index(msgIds, m.MsgID)
 		return idx >= 0
-	}, time.Second*3)
+	}, timeout)
 	if !ok {
-		return netip.AddrPort{}, 0, errors.Errorf("ping fowrard %s timeout", loc.Loc().String())
+		return netip.AddrPort{}, 0, errors.Errorf("ping fowrard %s timeout", loc.String())
 	}
-	return c.config.Proxyers[idx], m.LocID, nil
+	return c.config.Proxyers[idx], m.ForwardID, nil
 }
 
 func (c *Client) messageRequest(paddr netip.AddrPort, msg nodes.Message) (msgId uint32, err error) {
@@ -190,14 +180,14 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 	)
 
 	// todo: 获取标准性的地址
-	paddr, loc, err := c.route.Match(netip.IPv4Unspecified())
+	paddr, forward, err := c.route.Match(netip.IPv4Unspecified())
 	if err != nil {
 		return nil, err
 	}
 
 	var ids []uint32
 	msg := nodes.Message{}
-	msg.LocID = loc
+	msg.ForwardID = forward
 	for _, kind := range kinds {
 		msg.Kind = kind
 		id, err := c.messageRequest(paddr, msg)
@@ -222,11 +212,11 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 		case bvvd.PingForward:
 			stats.PingForward = time.Since(start)
 		case bvvd.PackLossClientUplink:
-			stats.PackLossClientUplink = msg.Raw.(nodes.PL)
+			stats.PackLossClientUplink = msg.Payload.(nodes.PL)
 		case bvvd.PackLossProxyerUplink:
-			stats.PackLossProxyerUplink = msg.Raw.(nodes.PL)
+			stats.PackLossProxyerUplink = msg.Payload.(nodes.PL)
 		case bvvd.PackLossProxyerDownlink:
-			stats.PackLossProxyerDownlink = msg.Raw.(nodes.PL)
+			stats.PackLossProxyerDownlink = msg.Payload.(nodes.PL)
 		default:
 		}
 	}
@@ -243,14 +233,13 @@ func (c *Client) uplinkService() (_ error) {
 		pkt = packet.Make(0, c.config.MaxRecvBuff)
 		hdr = bvvd.Fields{
 			Kind:   bvvd.Data,
-			LocID:  c.config.LocID,
 			Client: netip.AddrPortFrom(netip.IPv4Unspecified(), 0),
 		}
-		head = 64
+		head  = 64
+		paddr netip.AddrPort
 	)
 
 	for {
-
 		info, err := c.game.Capture(pkt.Sets(head, 0xffff))
 		if err != nil {
 			return c.close(err)
@@ -275,16 +264,14 @@ func (c *Client) uplinkService() (_ error) {
 			continue // PackLossClientUplink
 		}
 
-		var paddr netip.AddrPort
-		if c.config.FixRoute || !info.PlayData {
-			paddr, hdr.LocID = c.route.Default()
-		} else {
-			paddr, hdr.LocID, err = c.route.Match(hdr.Server)
-			if errorx.Temporary(err) {
-				continue // route probing
-			} else if err != nil {
-				return c.close(err)
+		paddr, hdr.ForwardID, err = c.route.Match(hdr.Server)
+		if errorx.Temporary(err) {
+			if debug.Debug() {
+				c.config.logger.Warn(err.Error(), errorx.Trace(err))
 			}
+			continue // route probing
+		} else if err != nil {
+			return c.close(err)
 		}
 
 		if err := hdr.Encode(pkt); err != nil {

@@ -38,18 +38,19 @@ type Link struct {
 	closeErr errorx.CloseErr
 }
 
-func newLink(links *Links, link Endpoint, paddr netip.AddrPort, loc bvvd.LocID) (*Link, error) {
+func newLink(links *Links, link Endpoint, paddr netip.AddrPort, forwardID bvvd.ForwardID) (*Link, error) {
 	var (
 		l = &Link{
 			links: links,
 			ep:    link,
 			paddr: paddr,
 			header: bvvd.Fields{
-				Kind:   bvvd.Data,
-				Proto:  link.proto,
-				LocID:  loc,
-				Client: link.client,
-				Server: link.server.Addr(),
+				Kind:      bvvd.Data,
+				Proto:     link.proto,
+				DataID:    0, // set by forward
+				ForwardID: forwardID,
+				Client:    link.client,
+				Server:    link.server.Addr(),
 			},
 		}
 		err error

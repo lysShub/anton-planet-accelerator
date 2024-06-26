@@ -17,10 +17,11 @@ func TestXxxx(t *testing.T) {
 	fmt.Println(debug.Debug())
 
 	config := &forward.Config{
+		Location:        bvvd.Moscow,
 		MaxRecvBuffSize: 1536,
 	}
 
-	f, err := forward.New(":19986", bvvd.Moscow.LocID(), config)
+	f, err := forward.New(":19986", config)
 	require.NoError(t, err)
 
 	err = f.Serve()

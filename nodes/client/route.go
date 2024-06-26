@@ -6,89 +6,87 @@ import (
 	"net/http"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 
 	"github.com/jftuga/geodist"
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
-	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/netkit/errorx"
 	"github.com/pkg/errors"
 )
 
 type route struct {
-	fixRoutMode    bool
+	inited       atomic.Bool
+	fixRouteMode bool
+	// fixRoute 或者 autoRout 中的非PlayData, 都发送到default
 	defaultProxyer netip.AddrPort
-	defaultLoc     bvvd.LocID
+	defaultForward bvvd.ForwardID
 
 	// auto route mode
-	location Location
-	mu       sync.RWMutex
-	locs     map[bvvd.LocID]netip.AddrPort // loc:paddr
-	routes   map[netip.Addr]netip.AddrPort // sadd:paddr
+	mu     sync.RWMutex
+	routes map[netip.Addr]entry
+}
+
+type entry struct {
+	paddr   netip.AddrPort
+	forward bvvd.ForwardID
+}
+
+func (e entry) valid() bool {
+	return e.paddr.IsValid() && e.forward.Vaid()
 }
 
 type Location interface {
 	Location(addr netip.Addr) (geodist.Coord, error)
 }
 
-func newFixModeRoute(paddr netip.AddrPort, loc bvvd.LocID) *route {
+func newRoute(fixRoute bool) *route {
 	return &route{
-		fixRoutMode:    true,
-		defaultProxyer: paddr, defaultLoc: loc,
+		fixRouteMode: fixRoute,
 	}
 }
 
-func newAutoModeRoute(loc Location) *route {
-	return &route{
-		fixRoutMode: false,
-		location:    loc,
-		locs:        map[bvvd.LocID]netip.AddrPort{},
-		routes:      map[netip.Addr]netip.AddrPort{},
+func (r *route) Init(defaultProxyer netip.AddrPort, defaultForward bvvd.ForwardID) {
+	if !r.inited.Swap(true) {
+		r.defaultProxyer = defaultProxyer
+		r.defaultForward = defaultForward
 	}
 }
 
-func (r *route) Default() (paddr netip.AddrPort, loc bvvd.LocID) {
-	return r.defaultProxyer, r.defaultLoc
-}
-
-func (r *route) Match(saddr netip.Addr) (paddr netip.AddrPort, loc bvvd.LocID, err error) {
-	if r.fixRoutMode {
-		return r.defaultProxyer, r.defaultLoc, nil
+func (r *route) Match(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.ForwardID, err error) {
+	if !r.inited.Load() {
+		return netip.AddrPort{}, 0, errorx.WrapTemp(errors.New("route not init"))
+	}
+	if r.fixRouteMode {
+		return r.defaultProxyer, r.defaultForward, nil
 	}
 
 	r.mu.RLock()
-	paddr = r.routes[saddr]
+	e := r.routes[saddr]
 	r.mu.RUnlock()
-	if paddr.IsValid() {
-		return paddr, 0, nil
+	if e.valid() {
+		return e.paddr, e.forward, nil
 	}
 
-	coord, err := r.location.Location(saddr)
-	if err != nil {
-		return netip.AddrPort{}, 0, err
-	}
-	rec, offset := bvvd.Forwards.Match(coord)
-	if debug.Debug() && offset > 500 {
-		println(fmt.Sprintf("forward %s offset to %s too large", rec.Location.String(), saddr.String()))
-	}
-
-	r.mu.RLock()
-	paddr = r.locs[rec.Location.LocID()]
-	r.mu.RUnlock()
-
-	if !paddr.IsValid() {
-		return netip.AddrPort{}, rec.Location.LocID(), nil
-	}
-	return paddr, 0, nil
+	err = errors.New("not record")
+	return
 }
 
-func (r *route) AddRecord(saddr netip.Addr, loc bvvd.LocID, paddr netip.AddrPort) {
+func (r *route) AddRecord(saddr netip.Addr, proxyer netip.AddrPort, forward bvvd.ForwardID) error {
 	if r.defaultProxyer.IsValid() {
-		panic("fix route mode not need")
+		return errors.New("fix route mode not need")
+	} else if !saddr.IsValid() {
+		return errors.Errorf("server address %s invalid", saddr.String())
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.locs[loc] = paddr
-	r.routes[saddr] = paddr
+	e := entry{proxyer, forward}
+	if !e.valid() {
+		return errors.Errorf("entry %s %d invalid", proxyer.String(), forward)
+	}
+
+	r.routes[saddr] = e
+	return nil
 }
 
 type temp struct {

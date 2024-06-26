@@ -20,7 +20,7 @@ type Config struct {
 	PcapPath string
 
 	FixRoute bool
-	LocID    bvvd.LocID
+	Location bvvd.Location
 	Proxyers []netip.AddrPort
 }
 

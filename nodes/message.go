@@ -3,23 +3,30 @@ package nodes
 import (
 	"encoding/binary"
 	"net/netip"
+	"unsafe"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
+	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 )
 
 type Message struct {
 	bvvd.Fields
 
-	MsgID uint32
-	Raw   any // option, store msg data, such as PL
+	MsgID   uint32
+	Payload any // option, store msg payload, such as PL
 }
 
 func (m *Message) Encode(to *packet.Packet) (err error) {
 	switch m.Kind {
 	case bvvd.PingProxyer:
 	case bvvd.PingForward:
+		if !m.ForwardID.Vaid() && m.Payload == nil {
+			return errors.Errorf("PingForward message require ForwardID or Raw")
+		}
 	case bvvd.PackLossClientUplink:
 	case bvvd.PackLossProxyerUplink:
 	case bvvd.PackLossProxyerDownlink:
@@ -41,16 +48,25 @@ func (m *Message) Encode(to *packet.Packet) (err error) {
 	}
 	to.Append(binary.BigEndian.AppendUint32(make([]byte, 0, 4), m.MsgID)...)
 
-	if m.Raw != nil {
+	if m.Payload != nil {
 		switch m.Kind {
 		case bvvd.PackLossClientUplink, bvvd.PackLossProxyerUplink, bvvd.PackLossProxyerDownlink:
-			pl, ok := m.Raw.(PL)
+			pl, ok := m.Payload.(PL)
 			if !ok {
-				return errors.Errorf("invalid data type %T", m.Raw)
+				return errors.Errorf("invalid data type %T", m.Payload)
 			}
 			if err = pl.Encode(to); err != nil {
 				return err
 			}
+		case bvvd.PingForward:
+			p, ok := m.Payload.(bvvd.Location)
+			if !ok {
+				return errors.Errorf("invalid data type %T", m.Payload)
+			}
+			if debug.Debug() {
+				require.Equal(test.T(), uintptr(1), unsafe.Sizeof(p))
+			}
+			to.Append(byte(p))
 		default:
 		}
 	}
@@ -63,12 +79,12 @@ func (m *Message) Decode(from *packet.Packet) error {
 		return err
 	}
 	m.Kind = hdr.Kind
-	m.LocID = hdr.LocID
+	m.ForwardID = hdr.ForwardID
 	switch m.Kind {
 	case bvvd.PingProxyer, bvvd.PackLossClientUplink, bvvd.PackLossProxyerDownlink:
 	case bvvd.PingForward, bvvd.PackLossProxyerUplink:
-		if !m.LocID.Valid() {
-			return errors.Errorf("require location %s", m.LocID.String())
+		if !m.ForwardID.Vaid() && m.Payload == nil {
+			return errors.Errorf("PingForward message require ForwardID or Raw")
 		}
 	default:
 		return errors.Errorf("unknown message kind %s", m.Kind.String())
@@ -86,7 +102,9 @@ func (m *Message) Decode(from *packet.Packet) error {
 			if err := pl.Decode(from); err != nil {
 				return err
 			}
-			m.Raw = pl
+			m.Payload = pl
+		case bvvd.PingForward:
+			m.Payload = bvvd.Location(from.Bytes()[0])
 		default:
 		}
 	}

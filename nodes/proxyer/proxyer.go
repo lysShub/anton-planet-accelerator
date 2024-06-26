@@ -107,15 +107,19 @@ func (p *Proxyer) AddForward(faddr netip.AddrPort) error {
 		return err
 	}
 
-	msg, pop := p.msgbuff.PopByDeadline(
+	msg, ok := p.msgbuff.PopByDeadline(
 		func(e nodes.Message) (pop bool) { return e.MsgID == msg.MsgID },
 		time.Now().Add(time.Second*3),
 	)
-	if !pop {
+	if !ok {
 		return errors.Errorf("add forward %s timeout", faddr.String())
 	}
-	loc, err := p.fs.Add(msg.LocID, faddr)
-	if err != nil {
+	loc, ok := msg.Payload.(bvvd.Location)
+	if !ok {
+		return errors.Errorf("ping forward message payload %#v", msg.Payload)
+	}
+
+	if err := p.fs.Add(loc, msg.ForwardID, faddr); err != nil {
 		return err
 	}
 	p.config.logger.Info("add forward success", slog.String("forward", faddr.String()), slog.String("LocID", loc.String()))
@@ -144,12 +148,25 @@ func (p *Proxyer) uplinkService() (_ error) {
 			}
 		case bvvd.PingForward:
 			hdr.SetClient(caddr)
-			if hdr.LocID().ID() == 0 {
+			if !hdr.ForwardID().Vaid() {
 				// boardcast forward
-				fs, err := p.fs.GetByLoc(hdr.LocID())
-				if err != nil {
-					p.config.logger.Warn(err.Error(), errorx.Trace(err))
-					continue
+				var fs []*Forward
+				{
+					var msg nodes.Message
+					if err := msg.Decode(pkt); err != nil {
+						p.config.logger.Warn(err.Error(), errorx.Trace(err))
+						continue
+					}
+					loc, ok := msg.Payload.(bvvd.Location)
+					if !ok {
+						p.config.logger.Warn("invalid PingForward payload", slog.Any("payload", msg.Payload))
+						continue
+					}
+					fs, err = p.fs.GetByLocation(loc)
+					if err != nil {
+						p.config.logger.Warn(err.Error(), errorx.Trace(err))
+						continue
+					}
 				}
 
 				for _, f := range fs {
@@ -158,7 +175,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 					}
 				}
 			} else {
-				f, err := p.fs.GetByLocID(hdr.LocID())
+				f, err := p.fs.GetByForward(hdr.ForwardID())
 				if err != nil {
 					p.config.logger.Warn(err.Error(), errorx.Trace(err))
 					continue
@@ -174,7 +191,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				p.config.logger.Error(err.Error(), errorx.Trace(err))
 				continue
 			}
-			msg.Raw = p.cs.Client(caddr).UplinkPL()
+			msg.Payload = p.cs.Client(caddr).UplinkPL()
 
 			if err := msg.Encode(pkt.SetData(0)); err != nil {
 				p.config.logger.Error(err.Error(), errorx.Trace(err))
@@ -185,7 +202,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		case bvvd.PackLossProxyerDownlink, bvvd.PackLossProxyerUplink:
-			f, err := p.fs.GetByLocID(hdr.LocID())
+			f, err := p.fs.GetByForward(hdr.ForwardID())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
@@ -197,9 +214,9 @@ func (p *Proxyer) uplinkService() (_ error) {
 				continue
 			}
 			if kind == bvvd.PackLossProxyerDownlink {
-				msg.Raw = f.DownlinkPL()
+				msg.Payload = f.DownlinkPL()
 			} else {
-				msg.Raw = f.UplinkPL()
+				msg.Payload = f.UplinkPL()
 			}
 			if err := msg.Encode(pkt.SetData(0)); err != nil {
 				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
@@ -218,7 +235,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				require.True(test.T(), ok)
 			}
 
-			f, err := p.fs.GetByLocID(hdr.LocID())
+			f, err := p.fs.GetByForward(hdr.ForwardID())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
@@ -238,7 +255,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 			if hdr.DataID() == 0xff {
 				var msg = nodes.Message{MsgID: 1} // todo: 多个forward时还是要设置有效ID
 				msg.Kind = bvvd.PackLossProxyerUplink
-				msg.LocID = hdr.LocID()
+				msg.ForwardID = hdr.ForwardID()
 				msg.Client = hdr.Client()
 
 				if err := msg.Encode(pkt.SetData(0)); err != nil {
@@ -272,7 +289,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 
 		switch kind := hdr.Kind(); kind {
 		case bvvd.Data:
-			f, err := p.fs.GetByLocID(hdr.LocID())
+			f, err := p.fs.GetByForward(hdr.ForwardID())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
@@ -289,7 +306,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 				return p.close(err)
 			}
 		case bvvd.PackLossProxyerUplink:
-			f, err := p.fs.GetByLocID(hdr.LocID())
+			f, err := p.fs.GetByForward(hdr.ForwardID())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
@@ -301,14 +318,14 @@ func (p *Proxyer) donwlinkService() (_ error) {
 				continue
 			}
 
-			if pl, ok := msg.Raw.(nodes.PL); ok {
+			if pl, ok := msg.Payload.(nodes.PL); ok {
 				f.SetUplinkPL(pl)
 			} else {
-				p.config.logger.Warn(fmt.Sprintf("unknown type %T", msg.Raw), errorx.Trace(nil))
+				p.config.logger.Warn(fmt.Sprintf("unknown type %T", msg.Payload), errorx.Trace(nil))
 			}
 		case bvvd.PingForward:
 			if hdr.Client().Addr().IsUnspecified() {
-				// is proxyer add forward PingForard, not set Client
+				// is proxyer PingForard, without set Client
 				var msg nodes.Message
 				if err := msg.Decode(pkt); err != nil {
 					p.config.logger.Warn(err.Error(), errorx.Trace(nil))
@@ -316,14 +333,6 @@ func (p *Proxyer) donwlinkService() (_ error) {
 				}
 				p.msgbuff.MustPut(msg)
 			} else {
-				f, err := p.fs.GetByFaddr(faddr)
-				if err != nil {
-					p.config.logger.Warn(err.Error(), errorx.Trace(err))
-					continue
-				}
-				// indicate forward, client will send Data with this LocID, if this link is fastest.
-				hdr.SetLocID(f.LocID())
-
 				if err = p.conn.WriteToAddrPort(pkt, hdr.Client()); err != nil {
 					return p.close(err)
 				}

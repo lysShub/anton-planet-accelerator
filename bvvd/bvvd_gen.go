@@ -42,9 +42,9 @@ const _location_name = "MoscowFrankfurtTokyoNewYork"
 
 var _location_index = [...]uint8{0, 6, 15, 20, 27}
 
-func (i location) String() string {
+func (i Location) String() string {
 	i -= 1
-	if i >= location(len(_location_index)-1) {
+	if i >= Location(len(_location_index)-1) {
 		return "location(" + strconv.FormatInt(int64(i+1), 10) + ")"
 	}
 	return _location_name[_location_index[i]:_location_index[i+1]]

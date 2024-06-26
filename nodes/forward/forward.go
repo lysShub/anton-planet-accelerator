@@ -22,8 +22,8 @@ import (
 )
 
 type Forward struct {
-	config   *Config
-	location bvvd.LocID
+	config    *Config
+	forwardID bvvd.ForwardID
 
 	conn conn.Conn
 	ps   *Proxyers
@@ -33,12 +33,12 @@ type Forward struct {
 	closeErr errorx.CloseErr
 }
 
-func New(addr string, loc bvvd.LocID, config *Config) (*Forward, error) {
+func New(addr string, config *Config) (*Forward, error) {
 	var f = &Forward{
-		config:   config.init(),
-		location: loc,
-		ps:       NewProxyers(),
-		links:    links.NewLinks(),
+		config:    config.init(),
+		forwardID: config.ForwardID,
+		ps:        NewProxyers(),
+		links:     links.NewLinks(),
 	}
 	err := nodes.DisableOffload(config.logger)
 	if err != nil {
@@ -67,10 +67,10 @@ func (f *Forward) close(cause error) error {
 
 func (f *Forward) Serve() error {
 	f.config.logger.Info("start", slog.String("listen", f.conn.LocalAddr().String()), slog.Bool("debug", debug.Debug()))
-	return f.recvService()
+	return f.uplinkService()
 }
 
-func (f *Forward) recvService() (err error) {
+func (f *Forward) uplinkService() (err error) {
 	var (
 		pkt = packet.Make(f.config.MaxRecvBuffSize)
 	)
@@ -87,12 +87,9 @@ func (f *Forward) recvService() (err error) {
 
 		switch kind := hdr.Kind(); kind {
 		case bvvd.PingForward:
-			id := hdr.LocID()
-			id.SetLoc(f.location.Loc())
-			hdr.SetLocID(id)
+			hdr.SetForwardID(f.forwardID)
 
-			err := f.conn.WriteToAddrPort(pkt, paddr)
-			if err != nil {
+			if err := f.conn.WriteToAddrPort(pkt, paddr); err != nil {
 				return f.close(err)
 			}
 		case bvvd.PackLossProxyerUplink:
@@ -101,7 +98,7 @@ func (f *Forward) recvService() (err error) {
 				f.config.logger.Error(err.Error(), errorx.Trace(err))
 				continue
 			}
-			msg.Raw = f.ps.Proxyer(paddr).UplinkPL()
+			msg.Payload = f.ps.Proxyer(paddr).UplinkPL()
 			if err := msg.Encode(pkt.SetData(0)); err != nil {
 				f.config.logger.Error(err.Error(), errorx.Trace(err))
 				continue
@@ -117,6 +114,7 @@ func (f *Forward) recvService() (err error) {
 			pkt = pkt.DetachN(bvvd.Size)
 			if debug.Debug() {
 				require.True(test.T(), nodes.ValidChecksum(pkt, hdr.Proto(), hdr.Server()))
+				require.Equal(test.T(), f.forwardID, hdr.ForwardID())
 			}
 
 			// only get port, tcp/udp is same
@@ -124,7 +122,7 @@ func (f *Forward) recvService() (err error) {
 
 			// read/create corresponding link, the link will self close by keepalive,
 			// so if Send/Recv return net.ErrClosed error should ignore.
-			link, new, err := f.links.Link(ep, paddr, hdr.LocID())
+			link, new, err := f.links.Link(ep, paddr, f.forwardID)
 			if err != nil {
 				return f.close(err)
 			} else if new {
