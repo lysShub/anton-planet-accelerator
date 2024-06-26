@@ -25,17 +25,36 @@ type Config struct {
 }
 
 func (c *Config) init() *Config {
+	if c.Name == "" {
+		panic("require game name")
+	}
+
+	if c.MaxRecvBuff < 1500 {
+		c.MaxRecvBuff = 1500
+	}
+	if c.TcpMssDelta >= 0 {
+		c.TcpMssDelta = -64
+	}
+
 	var fh *os.File
-	var err error
 	if c.LogPath == "" {
 		fh = os.Stdout
 	} else {
+		var err error
 		fh, err = os.OpenFile(c.LogPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
 		if err != nil {
 			panic(err)
 		}
 	}
 	c.logger = slog.New(slog.NewJSONHandler(fh, nil))
+
+	if !c.Location.Valid() {
+		panic("require location")
+	}
+
+	if len(c.Proxyers) == 0 {
+		panic("require proxyers")
+	}
 
 	return c
 }

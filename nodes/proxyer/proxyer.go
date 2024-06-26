@@ -159,9 +159,10 @@ func (p *Proxyer) uplinkService() (_ error) {
 					}
 					loc, ok := msg.Payload.(bvvd.Location)
 					if !ok {
-						p.config.logger.Warn("invalid PingForward payload", slog.Any("payload", msg.Payload))
+						p.config.logger.Warn("PingForward payload", slog.Any("payload", msg.Payload))
 						continue
 					}
+					msg.Encode(pkt.SetData(0))
 					fs, err = p.fs.GetByLocation(loc)
 					if err != nil {
 						p.config.logger.Warn(err.Error(), errorx.Trace(err))
@@ -169,8 +170,9 @@ func (p *Proxyer) uplinkService() (_ error) {
 					}
 				}
 
+				h, d := pkt.Head(), pkt.Data()
 				for _, f := range fs {
-					if err = p.sender.WriteToAddrPort(pkt, f.Addr()); err != nil {
+					if err = p.sender.WriteToAddrPort(pkt.Sets(h, d), f.Addr()); err != nil {
 						return p.close(err)
 					}
 				}

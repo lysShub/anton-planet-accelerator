@@ -19,6 +19,7 @@ func Test_Message(t *testing.T) {
 	var msg2 Message
 
 	require.NoError(t, msg2.Decode(pkt))
+	require.Zero(t, pkt.Data())
 
 	require.Equal(t, msg, msg2)
 }

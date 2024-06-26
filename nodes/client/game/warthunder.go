@@ -75,7 +75,7 @@ func (w *warthunder) Capture(pkt *packet.Packet) (Info, error) {
 			name, err := w.mapping.Name(src, hdr.Protocol())
 			if err != nil {
 				if errorx.Temporary(err) {
-					pass = false
+					pass = true // todo: maybe drop it
 				} else {
 					return Info{}, w.close(err)
 				}

@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/netip"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -107,8 +108,8 @@ func (c *Client) Start() error {
 	if c.start.Swap(true) {
 		return errors.Errorf("client started")
 	}
-	go c.downlinkServic()
 	go c.uplinkService()
+	go c.downlinkServic()
 
 	var start = time.Now()
 	paddr, forward, err := c.routeProbe(c.config.Location, time.Second*3)
@@ -151,7 +152,11 @@ func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (paddr net
 		return idx >= 0
 	}, timeout)
 	if !ok {
-		return netip.AddrPort{}, 0, errors.Errorf("ping fowrard %s timeout", loc.String())
+		pxys := []string{}
+		for _, e := range c.config.Proxyers {
+			pxys = append(pxys, e.String())
+		}
+		return netip.AddrPort{}, 0, errors.Errorf("PingForward location:%s proxyers:%s timeout", loc.String(), strings.Join(pxys, ","))
 	}
 	return c.config.Proxyers[idx], m.ForwardID, nil
 }

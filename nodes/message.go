@@ -96,7 +96,7 @@ func (m *Message) Decode(from *packet.Packet) error {
 	case bvvd.PingProxyer:
 	case bvvd.PingForward:
 		if from.Data() > 0 {
-			m.Payload = bvvd.Location(from.Bytes()[0])
+			m.Payload = bvvd.Location(from.Detach(make([]byte, 1))[0])
 		} else if !m.ForwardID.Vaid() {
 			return errors.Errorf("PingForward message require ForwardID or Payload")
 		}
