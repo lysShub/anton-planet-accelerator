@@ -84,10 +84,12 @@ func New(config *Config) (*Client, error) {
 }
 
 func (c *Client) close(cause error) error {
-	if cause != nil {
-		c.config.logger.Error(cause.Error(), errorx.Trace(cause))
-	} else {
-		c.config.logger.Info("close")
+	if !c.closeErr.Closed() {
+		if cause != nil {
+			c.config.logger.Error(cause.Error(), errorx.Trace(cause))
+		} else {
+			c.config.logger.Info("close")
+		}
 	}
 	return c.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
@@ -119,6 +121,7 @@ func (c *Client) Start() error {
 	}
 
 	c.route.Init(paddr, forward)
+	c.game.Start()
 	c.config.logger.Info("start",
 		slog.String("addr", c.laddr.String()),
 		slog.String("network", nodes.ProxyerNetwork),
@@ -128,6 +131,7 @@ func (c *Client) Start() error {
 		slog.String("rtt", time.Since(start).String()),
 		slog.Bool("debug", debug.Debug()),
 	)
+
 	return nil
 }
 

@@ -7,6 +7,7 @@ import (
 )
 
 type Game interface {
+	Start()
 	Capture(pkt *packet.Packet) (Info, error)
 	Close() error
 }

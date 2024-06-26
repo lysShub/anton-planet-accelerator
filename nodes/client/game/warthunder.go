@@ -4,7 +4,9 @@
 package game
 
 import (
+	"errors"
 	"net/netip"
+	"sync/atomic"
 
 	accelerator "github.com/lysShub/anton-planet-accelerator"
 	"github.com/lysShub/divert-go"
@@ -18,6 +20,8 @@ import (
 const Warthunder = "aces.exe"
 
 type warthunder struct {
+	started atomic.Bool
+
 	handle *divert.Handle
 	addr   divert.Address
 
@@ -31,7 +35,7 @@ func newWarthundr() (Game, error) {
 	var err error
 
 	var filter = "outbound and !loopback and ip and (tcp or udp)"
-	g.handle, err = divert.Open(filter, divert.Network, 0, 0)
+	g.handle, err = divert.Open(filter, divert.Network, -1, 0)
 	if err != nil {
 		return nil, g.close(err)
 	}
@@ -41,6 +45,8 @@ func newWarthundr() (Game, error) {
 	}
 	return g, nil
 }
+
+func (w *warthunder) Start() { w.started.Store(true) }
 
 func (w *warthunder) close(cause error) error {
 	return w.closeErr.Close(func() (errs []error) {
@@ -56,16 +62,21 @@ func (w *warthunder) close(cause error) error {
 }
 
 func (w *warthunder) Capture(pkt *packet.Packet) (Info, error) {
+	h, d := pkt.Head(), pkt.Data()
 	for {
-		n, err := w.handle.Recv(pkt.Bytes(), &w.addr)
+		n, err := w.handle.Recv(pkt.Sets(h, d).Bytes(), &w.addr)
 		if err != nil {
+			if errors.Is(err, windows.ERROR_INSUFFICIENT_BUFFER) {
+				return Info{}, errorx.WrapTemp(err)
+			}
 			return Info{}, w.close(err)
 		} else if n < header.IPv4MinimumSize {
 			continue
 		}
+		pkt.SetData(n)
 		hdr := header.IPv4(pkt.Bytes())
 
-		pass := netip.AddrFrom4(hdr.DestinationAddress().As4()).IsMulticast()
+		pass := !w.started.Load() || netip.AddrFrom4(hdr.DestinationAddress().As4()).IsMulticast()
 		if !pass {
 			src := netip.AddrPortFrom(
 				netip.AddrFrom4(hdr.SourceAddress().As4()),
