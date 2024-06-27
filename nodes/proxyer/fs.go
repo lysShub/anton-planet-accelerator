@@ -44,10 +44,10 @@ func (f *Forwards) GetByLocation(loc bvvd.Location) []*Forward {
 		fs = append(fs, f)
 	}
 
-	coord := loc.Region().Coord
+	coord := loc.Coord()
 	slices.SortFunc(fs, func(a, b *Forward) int {
-		_, d1 := geodist.HaversineDistance(a.location.Region().Coord, coord)
-		_, d2 := geodist.HaversineDistance(b.location.Region().Coord, coord)
+		_, d1 := geodist.HaversineDistance(a.location.Coord(), coord)
+		_, d2 := geodist.HaversineDistance(b.location.Coord(), coord)
 		if d1 < d2 {
 			return -1
 		} else if d1 > d2 {

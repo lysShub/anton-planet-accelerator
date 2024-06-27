@@ -1,6 +1,6 @@
 package bvvd
 
-//go:generate stringer -output bvvd_gen.go -type=Kind,location
+//go:generate stringer -output bvvd_gen.go -type=Kind
 
 import (
 	"fmt"

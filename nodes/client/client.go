@@ -235,12 +235,12 @@ func (c *Client) RouteProbe(saddr netip.Addr) (paddr netip.AddrPort, forward bvv
 	if err != nil {
 		return netip.AddrPort{}, 0, err
 	}
-	loc, offset := bvvd.Regions.Match(coord)
+	loc, offset := bvvd.Locations.Match(coord)
 	if debug.Debug() {
-		c.config.logger.Info("route probe", slog.Float64("offset", offset), slog.String("server", saddr.String()), slog.String("location", loc.Location.String()))
+		c.config.logger.Info("route probe", slog.Float64("offset", offset), slog.String("server", saddr.String()), slog.String("location", loc.String()))
 	}
 
-	return c.routeProbe(loc.Location, time.Second*3)
+	return c.routeProbe(loc, time.Second*3)
 }
 
 func (c *Client) uplinkService() (_ error) {
