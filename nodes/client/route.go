@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	stderr "errors"
 	"fmt"
 	"net/http"
 	"net/netip"
@@ -17,13 +18,17 @@ import (
 type route struct {
 	inited       atomic.Bool
 	fixRouteMode bool
+
 	// fixRoute 或者 autoRout 中的非PlayData, 都发送到default
 	defaultProxyer netip.AddrPort
 	defaultForward bvvd.ForwardID
 
-	// auto route mode
 	mu     sync.RWMutex
 	routes map[netip.Addr]entry
+
+	routeProbe RouteProbe
+	inflightMu sync.RWMutex
+	inflight   map[netip.Addr]result
 }
 
 type entry struct {
@@ -35,8 +40,8 @@ func (e entry) valid() bool {
 	return e.paddr.IsValid() && e.forward.Vaid()
 }
 
-type Location interface {
-	Location(addr netip.Addr) (geodist.Coord, error)
+type RouteProbe interface {
+	RouteProbe(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.ForwardID, err error)
 }
 
 func newRoute(fixRoute bool) *route {
@@ -45,16 +50,17 @@ func newRoute(fixRoute bool) *route {
 	}
 }
 
-func (r *route) Init(defaultProxyer netip.AddrPort, defaultForward bvvd.ForwardID) {
+func (r *route) Init(probe RouteProbe, defaultProxyer netip.AddrPort, defaultForward bvvd.ForwardID) {
 	if !r.inited.Swap(true) {
 		r.defaultProxyer = defaultProxyer
 		r.defaultForward = defaultForward
+		r.routeProbe = probe
 	}
 }
 
 func (r *route) Match(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.ForwardID, err error) {
 	if !r.inited.Load() {
-		return netip.AddrPort{}, 0, errorx.WrapTemp(errors.New("route not init"))
+		return netip.AddrPort{}, 0, errors.New("route not init")
 	}
 	if r.fixRouteMode {
 		return r.defaultProxyer, r.defaultForward, nil
@@ -66,45 +72,65 @@ func (r *route) Match(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.Forw
 	if e.valid() {
 		return e.paddr, e.forward, nil
 	}
-
-	err = errors.New("not record")
-	return
+	return r.probe(saddr)
 }
 
-func (r *route) AddRecord(saddr netip.Addr, proxyer netip.AddrPort, forward bvvd.ForwardID) error {
-	if r.defaultProxyer.IsValid() {
-		return errors.New("fix route mode not need")
-	} else if !saddr.IsValid() {
-		return errors.Errorf("server address %s invalid", saddr.String())
+func (r *route) probe(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.ForwardID, err error) {
+	r.inflightMu.RLock()
+	rest, has := r.inflight[saddr]
+	r.inflightMu.RUnlock()
+	if !has {
+		r.inflightMu.Lock()
+		r.inflight[saddr] = result{}
+		r.inflightMu.Unlock()
+
+		go r.probeRoute(saddr)
+		err = errorx.WrapTemp(ErrRouteProbe)
+	} else if rest.done {
+		r.inflightMu.Lock()
+		delete(r.inflight, saddr)
+		r.inflightMu.Unlock()
+
+		if rest.err != nil {
+			err = errors.WithMessage(rest.err, saddr.String())
+		} else {
+			r.mu.RLock()
+			e := r.routes[saddr]
+			r.mu.RUnlock()
+			paddr, forward = e.paddr, e.forward
+		}
+	} else {
+		err = errorx.WrapTemp(ErrRouteProbing)
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
 
-	e := entry{proxyer, forward}
-	if !e.valid() {
-		return errors.Errorf("entry %s %d invalid", proxyer.String(), forward)
+	return paddr, forward, err
+}
+
+type result struct {
+	done bool
+	err  error
+}
+
+func (r *route) probeRoute(saddr netip.Addr) {
+	paddr, fid, err := r.routeProbe.RouteProbe(saddr)
+	if err == nil {
+		r.mu.Lock()
+		r.routes[saddr] = entry{paddr, fid}
+		r.mu.Unlock()
 	}
 
-	r.routes[saddr] = e
-	return nil
+	r.inflightMu.Lock()
+	r.inflight[saddr] = result{err: err, done: true}
+	r.inflightMu.Unlock()
 }
 
-type temp struct {
-	mu    sync.RWMutex
-	cache map[netip.Addr]geodist.Coord
-}
+var ErrRouteProbe = stderr.New("start route probe")
+var ErrRouteProbing = stderr.New("route probing")
 
-var T = &temp{cache: map[netip.Addr]geodist.Coord{}}
-
-func (t *temp) Location(addr netip.Addr) (geodist.Coord, error) {
+// todo: temp, should from admin
+func IPCoord(addr netip.Addr) (geodist.Coord, error) {
 	if !addr.Is4() {
 		return geodist.Coord{}, errors.New("only support ipv4")
-	}
-	t.mu.RLock()
-	coord, has := t.cache[addr]
-	t.mu.RUnlock()
-	if has {
-		return coord, nil
 	}
 
 	url := fmt.Sprintf(`http://ip-api.com/json/%s?fields=status,country,lat,lon,query`, addr.String())
@@ -132,10 +158,6 @@ func (t *temp) Location(addr netip.Addr) (geodist.Coord, error) {
 	if ret.Status != "success" && ret.Query != addr.String() {
 		return geodist.Coord{}, errors.Errorf("invalid response %#v", ret)
 	}
-	coord = geodist.Coord{Lat: ret.Lat, Lon: ret.Lon}
 
-	t.mu.Lock()
-	t.cache[addr] = coord
-	t.mu.Unlock()
-	return coord, nil
+	return geodist.Coord{Lat: ret.Lat, Lon: ret.Lon}, nil
 }

@@ -120,7 +120,7 @@ func (c *Client) Start() error {
 		return err
 	}
 
-	c.route.Init(paddr, forward)
+	c.route.Init(c, paddr, forward)
 	c.game.Start()
 	c.config.logger.Info("start",
 		slog.String("addr", c.laddr.String()),
@@ -237,6 +237,19 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 	return stats, err
 }
 
+func (c *Client) RouteProbe(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.ForwardID, err error) {
+	coord, err := IPCoord(saddr)
+	if err != nil {
+		return netip.AddrPort{}, 0, err
+	}
+	loc, offset := bvvd.Forwards.Match(coord)
+	if debug.Debug() {
+		c.config.logger.Info("route probe", slog.Float64("offset", offset), slog.String("server", saddr.String()), slog.String("location", loc.Location.String()))
+	}
+
+	return c.routeProbe(loc.Location, time.Second*3)
+}
+
 func (c *Client) uplinkService() (_ error) {
 	var (
 		pkt = packet.Make(0, c.config.MaxRecvBuff)
@@ -275,8 +288,8 @@ func (c *Client) uplinkService() (_ error) {
 
 		paddr, hdr.ForwardID, err = c.route.Match(hdr.Server)
 		if errorx.Temporary(err) {
-			if debug.Debug() {
-				c.config.logger.Warn(err.Error(), errorx.Trace(err))
+			if errors.Is(ErrRouteProbe, err) {
+				c.config.logger.Info("route probe", slog.String("server", hdr.Server.String()))
 			}
 			continue // route probing
 		} else if err != nil {
