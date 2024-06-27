@@ -19,7 +19,7 @@ func main() {
 	t := test.T()
 
 	config := &forward.Config{
-		Location:        bvvd.Moscow,
+		Location:        bvvd.Moscow, // todo: 支持多地址（先后优先级）
 		ForwardID:       1,
 		MaxRecvBuffSize: 2048,
 	}

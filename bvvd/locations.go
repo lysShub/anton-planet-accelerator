@@ -13,8 +13,8 @@ type Forward struct {
 
 var Forwards = forwards{
 	{geodist.Coord{Lat: 55.769, Lon: 37.586}, Moscow},
-	{geodist.Coord{Lat: 50.103, Lon: 8.679}, Frankfurt},
-	{geodist.Coord{Lat: 35.699, Lon: 139.774}, Tokyo},
+	// {geodist.Coord{Lat: 50.103, Lon: 8.679}, Frankfurt},
+	// {geodist.Coord{Lat: 35.699, Lon: 139.774}, Tokyo},
 	{geodist.Coord{Lat: 40.716, Lon: -74.017}, NewYork},
 }
 

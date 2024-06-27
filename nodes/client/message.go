@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net/netip"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/netkit/packet"
 )
@@ -62,14 +65,12 @@ type NetworkStates struct {
 	PackLossProxyerDownlink nodes.PL
 }
 
-const InvalidRtt = time.Hour
-
 func (n *NetworkStates) String() string {
 	var s = &strings.Builder{}
 
-	p2 := n.PingForward
-	if p2 < InvalidRtt && n.PingProxyer < InvalidRtt && p2 > n.PingProxyer {
-		p2 -= n.PingProxyer
+	p2 := time.Duration(0)
+	if p2 > 0 && n.PingProxyer > 0 && p2 > n.PingProxyer {
+		p2 = n.PingForward - n.PingProxyer
 	}
 	var elems = []string{
 		"ping", n.strdur(n.PingProxyer), n.strdur(p2),
@@ -105,4 +106,54 @@ func (*NetworkStates) strdur(dur time.Duration) string {
 		s2 = 0
 	}
 	return fmt.Sprintf("%d.%d", s1, s2)
+}
+
+type trunkRouteRecorder struct {
+	scale       time.Duration
+	initPaddr   netip.AddrPort
+	initForward bvvd.ForwardID
+
+	sync.RWMutex
+	lastWasInit bool
+
+	updateTime time.Time
+	updated    bool
+	paddr      netip.AddrPort
+	forward    bvvd.ForwardID
+}
+
+func newTrunkRouteRecorder(scale time.Duration, paddr netip.AddrPort, forward bvvd.ForwardID) *trunkRouteRecorder {
+	return &trunkRouteRecorder{
+		scale:       scale,
+		initPaddr:   paddr,
+		initForward: forward,
+	}
+}
+
+func (r *trunkRouteRecorder) Trunk() (paddr netip.AddrPort, forward bvvd.ForwardID, updata bool) {
+	r.Lock()
+	defer r.Unlock()
+
+	if time.Since(r.updateTime) < r.scale {
+		updata = r.updated || r.lastWasInit
+		r.updated, r.lastWasInit = false, false
+		return r.paddr, r.forward, updata
+	} else {
+		updata = !r.lastWasInit
+		r.lastWasInit = true
+		return r.initPaddr, r.initForward, updata
+	}
+}
+
+func (r *trunkRouteRecorder) Update(paddr netip.AddrPort, forward bvvd.ForwardID) {
+	r.Lock()
+	defer r.Unlock()
+
+	if r.paddr != paddr {
+		r.paddr, r.updated = paddr, true
+	}
+	if r.forward != forward {
+		r.forward, r.updated = forward, true
+	}
+	r.updateTime = time.Now()
 }

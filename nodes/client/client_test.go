@@ -33,10 +33,10 @@ func TestXxxx(t *testing.T) {
 		TcpMssDelta: -64,
 		PcapPath:    "client.pcap",
 
-		FixRoute: true,
+		FixRoute: false,
 		Location: bvvd.Moscow,
 		Proxyers: []netip.AddrPort{
-			netip.MustParseAddrPort("39.106.138.35:19986"), // 莫斯科
+			netip.MustParseAddrPort("39.106.138.35:19986"), // 北京
 			// netip.MustParseAddrPort("8.137.91.200:19986"),  // 洛杉矶
 		},
 	}
@@ -45,13 +45,11 @@ func TestXxxx(t *testing.T) {
 	c, err := client.New(config)
 	require.NoError(t, err)
 
-	require.NoError(t, c.Start())
-
 	for {
 		stats, err := c.NetworkStats(time.Second)
 		if errorx.Temporary(err) {
-			fmt.Println("warn", err.Error())
-			err = nil
+			println("warn", err.Error())
+			continue
 		}
 		require.NoError(t, err)
 

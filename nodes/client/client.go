@@ -32,7 +32,6 @@ import (
 type Client struct {
 	config *Config
 	laddr  netip.AddrPort
-	start  atomic.Bool
 
 	game   game.Game
 	inject inject.Inject
@@ -42,6 +41,7 @@ type Client struct {
 	downlinkPL *nodes.PLStats
 
 	route *route
+	trunk *trunkRouteRecorder
 
 	msgMgr *messageManager
 
@@ -80,7 +80,7 @@ func New(config *Config) (*Client, error) {
 		}
 	}
 
-	return c, nil
+	return c, c.start()
 }
 
 func (c *Client) close(cause error) error {
@@ -106,10 +106,7 @@ func (c *Client) close(cause error) error {
 	})
 }
 
-func (c *Client) Start() error {
-	if c.start.Swap(true) {
-		return errors.Errorf("client started")
-	}
+func (c *Client) start() error {
 	go c.uplinkService()
 	go c.downlinkServic()
 
@@ -120,6 +117,7 @@ func (c *Client) Start() error {
 		return err
 	}
 
+	c.trunk = newTrunkRouteRecorder(time.Second*3, paddr, forward)
 	c.route.Init(c, paddr, forward)
 	c.game.Start()
 	c.config.logger.Info("start",
@@ -187,21 +185,16 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 			bvvd.PackLossProxyerUplink, bvvd.PackLossProxyerDownlink,
 		}
 	)
-
-	// todo: 获取标准性的地址
-	paddr, forward, err := c.route.Match(netip.IPv4Unspecified())
-	if err != nil {
-		return nil, err
-	}
+	paddr, fid, _ := c.trunk.Trunk()
 
 	var ids []uint32
 	msg := nodes.Message{}
-	msg.ForwardID = forward
+	msg.ForwardID = fid
 	for _, kind := range kinds {
 		msg.Kind = kind
 		id, err := c.messageRequest(paddr, msg)
 		if err != nil {
-			return nil, err
+			return nil, c.close(err)
 		}
 		ids = append(ids, id)
 	}
@@ -286,7 +279,7 @@ func (c *Client) uplinkService() (_ error) {
 			continue // PackLossClientUplink
 		}
 
-		paddr, hdr.ForwardID, err = c.route.Match(hdr.Server)
+		paddr, hdr.ForwardID, err = c.route.Match(hdr.Server, info.PlayData)
 		if errorx.Temporary(err) {
 			if errors.Is(ErrRouteProbe, err) {
 				c.config.logger.Info("route probe", slog.String("server", hdr.Server.String()))
@@ -294,6 +287,9 @@ func (c *Client) uplinkService() (_ error) {
 			continue // route probing
 		} else if err != nil {
 			return c.close(err)
+		}
+		if info.PlayData {
+			c.trunk.Update(paddr, hdr.ForwardID)
 		}
 
 		if err := hdr.Encode(pkt); err != nil {

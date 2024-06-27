@@ -31,6 +31,15 @@ type route struct {
 	inflight   map[netip.Addr]result
 }
 
+func newRoute(fixRoute bool) *route {
+	return &route{
+		fixRouteMode: fixRoute,
+
+		routes:   map[netip.Addr]entry{},
+		inflight: map[netip.Addr]result{},
+	}
+}
+
 type entry struct {
 	paddr   netip.AddrPort
 	forward bvvd.ForwardID
@@ -44,25 +53,20 @@ type RouteProbe interface {
 	RouteProbe(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.ForwardID, err error)
 }
 
-func newRoute(fixRoute bool) *route {
-	return &route{
-		fixRouteMode: fixRoute,
-	}
-}
-
 func (r *route) Init(probe RouteProbe, defaultProxyer netip.AddrPort, defaultForward bvvd.ForwardID) {
 	if !r.inited.Swap(true) {
 		r.defaultProxyer = defaultProxyer
 		r.defaultForward = defaultForward
+
 		r.routeProbe = probe
 	}
 }
 
-func (r *route) Match(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.ForwardID, err error) {
+func (r *route) Match(saddr netip.Addr, probe bool) (paddr netip.AddrPort, forward bvvd.ForwardID, err error) {
 	if !r.inited.Load() {
 		return netip.AddrPort{}, 0, errors.New("route not init")
 	}
-	if r.fixRouteMode {
+	if !probe || r.fixRouteMode {
 		return r.defaultProxyer, r.defaultForward, nil
 	}
 
