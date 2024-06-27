@@ -235,7 +235,7 @@ func (c *Client) RouteProbe(saddr netip.Addr) (paddr netip.AddrPort, forward bvv
 	if err != nil {
 		return netip.AddrPort{}, 0, err
 	}
-	loc, offset := bvvd.Forwards.Match(coord)
+	loc, offset := bvvd.Regions.Match(coord)
 	if debug.Debug() {
 		c.config.logger.Info("route probe", slog.Float64("offset", offset), slog.String("server", saddr.String()), slog.String("location", loc.Location.String()))
 	}

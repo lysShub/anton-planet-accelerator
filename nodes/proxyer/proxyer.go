@@ -163,11 +163,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 						continue
 					}
 					msg.Encode(pkt.SetData(0))
-					fs, err = p.fs.GetByLocation(loc)
-					if err != nil {
-						p.config.logger.Warn(err.Error(), errorx.Trace(err))
-						continue
-					}
+					fs = p.fs.GetByLocation(loc)
 				}
 
 				h, d := pkt.Head(), pkt.Data()

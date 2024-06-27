@@ -2,10 +2,12 @@ package proxyer
 
 import (
 	"net/netip"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 
+	"github.com/jftuga/geodist"
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/pkg/errors"
@@ -32,21 +34,44 @@ func (f *Forwards) GetByForward(fid bvvd.ForwardID) (*Forward, error) {
 	return fw, nil
 }
 
-// GetByLoc get forwards that is on loc position
-func (f *Forwards) GetByLocation(loc bvvd.Location) ([]*Forward, error) {
+// GetByLoc get best perfect forwards by location
+func (f *Forwards) GetByLocation(loc bvvd.Location) []*Forward {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	var fs []*Forward
+	var fs = make([]*Forward, 0, len(f.fs))
 	for _, f := range f.fs {
-		if f.location == loc {
-			fs = append(fs, f)
+		fs = append(fs, f)
+	}
+
+	coord := loc.Region().Coord
+	slices.SortFunc(fs, func(a, b *Forward) int {
+		_, d1 := geodist.HaversineDistance(a.location.Region().Coord, coord)
+		_, d2 := geodist.HaversineDistance(b.location.Region().Coord, coord)
+		if d1 < d2 {
+			return -1
+		} else if d1 > d2 {
+			return 1
 		}
+		return 0
+	})
+
+	if len(fs) > 5 {
+		over := fs[0].location == fs[1].location && fs[1].location == fs[2].location
+		if over {
+			fs1 := []*Forward{fs[0], fs[1], fs[2]}
+			for i, e := range fs {
+				if i >= 3 && e.location != fs[0].location && len(fs1) <= 5 {
+					fs1 = append(fs1, e)
+				}
+			}
+			return fs1
+		} else {
+			return fs[:5]
+		}
+	} else {
+		return fs
 	}
-	if len(fs) == 0 {
-		return nil, errors.Errorf("not forward %s record", loc.String())
-	}
-	return fs, nil
 }
 
 func (f *Forwards) Add(loc bvvd.Location, id bvvd.ForwardID, faddr netip.AddrPort) error {
