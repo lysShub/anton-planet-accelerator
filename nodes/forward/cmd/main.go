@@ -17,7 +17,6 @@ import (
 // go run -tags "debug" . 莫斯科
 func main() {
 	var loc bvvd.Location
-	fmt.Println(os.Args)
 	for i, e := range os.Args {
 		if i > 0 && !loc.Valid() {
 			for _, l := range bvvd.Locations {

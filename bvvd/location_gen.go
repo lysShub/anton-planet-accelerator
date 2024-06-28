@@ -12,12 +12,13 @@ func _() {
 	_ = x[Frankfurt-2]
 	_ = x[Tokyo-3]
 	_ = x[NewYork-4]
-	_ = x[_end-5]
+	_ = x[LosAngeles-5]
+	_ = x[_end-6]
 }
 
-const _Location_name = "MoscowFrankfurtTokyoNewYork_end"
+const _Location_name = "MoscowFrankfurtTokyoNewYorkLosAngeles_end"
 
-var _Location_index = [...]uint8{0, 6, 15, 20, 27, 31}
+var _Location_index = [...]uint8{0, 6, 15, 20, 27, 37, 41}
 
 func (i Location) String() string {
 	i -= 1

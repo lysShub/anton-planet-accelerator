@@ -43,6 +43,7 @@ const (
 	Frankfurt
 	Tokyo
 	NewYork
+	LosAngeles
 	_end
 )
 
@@ -55,11 +56,12 @@ var infos = []struct {
 	{coord: geodist.Coord{Lat: 50.103, Lon: 8.679}, hans: "法兰克福"},
 	{coord: geodist.Coord{Lat: 35.699, Lon: 139.774}, hans: "东京"},
 	{coord: geodist.Coord{Lat: 40.716, Lon: -74.017}, hans: "纽约"},
+	{coord: geodist.Coord{Lat: 34.07, Lon: -118.25}, hans: "洛杉矶"},
 	{},
 }
 
 var Locations = locations{
-	Moscow, Frankfurt, Tokyo, NewYork,
+	Moscow, Frankfurt, Tokyo, NewYork, LosAngeles,
 }
 
 type locations []Location
