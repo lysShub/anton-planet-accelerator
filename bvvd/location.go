@@ -16,7 +16,14 @@ func (l Location) Valid() bool {
 
 func (l Location) Coord() geodist.Coord {
 	if l.Valid() {
-		return coords[int(l)]
+		return infos[int(l)].coord
+	}
+	panic(l.String())
+}
+
+func (l Location) Hans() string {
+	if l.Valid() {
+		return infos[int(l)].hans
 	}
 	panic(l.String())
 }
@@ -39,17 +46,20 @@ const (
 	_end
 )
 
-var Locations = locations{
-	Moscow, Frankfurt, Tokyo, NewYork,
+var infos = []struct {
+	coord geodist.Coord
+	hans  string
+}{
+	{},
+	{coord: geodist.Coord{Lat: 55.769, Lon: 37.586}, hans: "莫斯科"},
+	{coord: geodist.Coord{Lat: 50.103, Lon: 8.679}, hans: "法兰克福"},
+	{coord: geodist.Coord{Lat: 35.699, Lon: 139.774}, hans: "东京"},
+	{coord: geodist.Coord{Lat: 40.716, Lon: -74.017}, hans: "纽约"},
+	{},
 }
 
-var coords = []geodist.Coord{
-	{},
-	{Lat: 55.769, Lon: 37.586},
-	{Lat: 50.103, Lon: 8.679},
-	{Lat: 35.699, Lon: 139.774},
-	{Lat: 40.716, Lon: -74.017},
-	{},
+var Locations = locations{
+	Moscow, Frankfurt, Tokyo, NewYork,
 }
 
 type locations []Location

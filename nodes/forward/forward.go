@@ -66,7 +66,11 @@ func (f *Forward) close(cause error) error {
 }
 
 func (f *Forward) Serve() error {
-	f.config.logger.Info("start", slog.String("listen", f.conn.LocalAddr().String()), slog.Bool("debug", debug.Debug()))
+	f.config.logger.Info("start",
+		slog.String("listen", f.conn.LocalAddr().String()),
+		slog.String("location", f.config.Location.Hans()),
+		slog.Bool("debug", debug.Debug()),
+	)
 	return f.uplinkService()
 }
 

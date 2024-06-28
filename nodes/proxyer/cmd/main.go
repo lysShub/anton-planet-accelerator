@@ -21,16 +21,14 @@ func main() {
 		MaxRecvBuff: 2048,
 	}
 
-	// faddr := netip.MustParseAddrPort("45.150.236.6:19986") // 东京
-	faddr := netip.MustParseAddrPort("45.131.69.50:19986") // 莫斯科
-
 	var t = test.T()
 	p, err := proxyer.New(":19986", &config)
 	require.NoError(t, err)
 
 	go func() {
 		time.Sleep(time.Second)
-		require.NoError(t, p.AddForward(faddr))
+		require.NoError(t, p.AddForward(netip.MustParseAddrPort("45.131.69.50:19986")))  // 莫斯科
+		require.NoError(t, p.AddForward(netip.MustParseAddrPort("103.94.185.61:19986"))) // 洛杉矶
 	}()
 
 	err = p.Serve()

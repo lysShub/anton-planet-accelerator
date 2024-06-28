@@ -5,21 +5,37 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes/forward"
-	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/rawsock/test"
 	"github.com/stretchr/testify/require"
 )
 
-// go build -tags "debug" -race .
+// go run -tags "debug" . 莫斯科
 func main() {
-	fmt.Println(debug.Debug())
+	var loc bvvd.Location
+	fmt.Println(os.Args)
+	for i, e := range os.Args {
+		if i > 0 && !loc.Valid() {
+			for _, l := range bvvd.Locations {
+				if l.Hans() == strings.TrimSpace(e) {
+					loc = l
+				}
+			}
+		}
+	}
+	if !loc.Valid() {
+		fmt.Println("require location")
+		return
+	}
+
 	t := test.T()
 
 	config := &forward.Config{
-		Location:        bvvd.Moscow, // todo: 支持多地址（先后优先级）
+		Location:        loc,
 		ForwardID:       1,
 		MaxRecvBuffSize: 2048,
 	}
@@ -29,4 +45,13 @@ func main() {
 
 	err = f.Serve()
 	require.NoError(t, err)
+}
+
+func match(name string) bool {
+	for _, loc := range bvvd.Locations {
+		if loc.Hans() == name {
+			return true
+		}
+	}
+	return false
 }
