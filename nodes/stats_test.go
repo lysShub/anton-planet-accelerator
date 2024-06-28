@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/lysShub/netkit/packet"
 	"github.com/stretchr/testify/require"
@@ -273,4 +274,16 @@ func dist(a, b int) int {
 		return a - b
 	}
 	return b - a
+}
+
+func Test_Speed(t *testing.T) {
+	t.Run("base", func(t *testing.T) {
+		s := NewSpeed(time.Second)
+
+		s.Add(1024)
+		time.Sleep(time.Millisecond * 1100)
+
+		require.InDelta(t, 1024.0, s.Speed(), 64)
+	})
+
 }

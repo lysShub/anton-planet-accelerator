@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -290,4 +291,84 @@ func (p PL) String() string {
 		v2 = 0
 	}
 	return fmt.Sprintf("%02d.%d", v1, v2)
+}
+
+type Speed struct {
+	period time.Duration
+
+	sync.RWMutex
+	closed bool
+	speed  float64
+
+	start time.Time
+	count atomic.Uint32
+}
+
+func NewSpeed(period time.Duration) *Speed {
+	if period == 0 {
+		panic("require positive")
+	}
+
+	var s = &Speed{
+		period: period,
+
+		start: time.Now(),
+	}
+	time.AfterFunc(period, s.update)
+	return s
+}
+
+func (s *Speed) update() {
+	s.Lock()
+	if s.closed {
+		return
+	}
+	s.speed = float64(s.count.Swap(0)) / time.Since(s.start).Seconds()
+	s.start = time.Now()
+	s.Unlock()
+
+	time.AfterFunc(s.period, s.update)
+}
+
+func (s *Speed) Add(n int) {
+	s.count.Add(uint32(n))
+}
+
+// Speed  B/s
+func (s *Speed) Speed() float64 {
+	s.RLock()
+	defer s.RUnlock()
+	return s.speed
+}
+
+func (s *Speed) Close() error {
+	s.Lock()
+	s.closed = true
+	s.Unlock()
+	return nil
+}
+
+type LinkSpeed struct {
+	up   *Speed
+	down *Speed
+}
+
+func NewLinkSpeed(period time.Duration) *LinkSpeed {
+	return &LinkSpeed{
+		up:   NewSpeed(period),
+		down: NewSpeed(period),
+	}
+}
+
+func (l *LinkSpeed) Uplink(n int)   { l.up.Add(n) }
+func (l *LinkSpeed) Downlink(n int) { l.down.Add(n) }
+
+func (l *LinkSpeed) Speed() (up, down float64) {
+	return l.up.Speed(), l.down.Speed()
+}
+
+func (l *LinkSpeed) Close() error {
+	l.up.Close()
+	l.down.Close()
+	return nil
 }

@@ -29,9 +29,11 @@ type Proxyer struct {
 	conn conn.Conn
 	cs   *Clients
 
-	sender  conn.Conn
-	fs      *Forwards
+	sender conn.Conn
+	fs     *Forwards
+
 	msgbuff *nodes.Heap[nodes.Message]
+	speed   *nodes.LinkSpeed
 
 	closeErr errorx.CloseErr
 }
@@ -42,6 +44,7 @@ func New(addr string, config *Config) (*Proxyer, error) {
 		cs:      NewClients(),
 		fs:      NewForwards(),
 		msgbuff: nodes.NewHeap[nodes.Message](4),
+		speed:   nodes.NewLinkSpeed(time.Second),
 	}
 
 	err := nodes.DisableOffload(config.logger)
@@ -71,11 +74,14 @@ func (p *Proxyer) close(cause error) error {
 	}
 	return p.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
-		if p.conn != nil {
-			errs = append(errs, p.conn.Close())
+		if p.speed != nil {
+			errs = append(errs, p.speed.Close())
 		}
 		if p.sender != nil {
 			errs = append(errs, p.sender.Close())
+		}
+		if p.conn != nil {
+			errs = append(errs, p.conn.Close())
 		}
 		return errs
 	})
@@ -126,6 +132,30 @@ func (p *Proxyer) AddForward(faddr netip.AddrPort) error {
 	return nil
 }
 
+func (p *Proxyer) Speed() (up, down string) {
+	up1, down1 := p.speed.Speed()
+
+	var human = func(s float64) string {
+		const (
+			K = 1024
+			M = 1024 * K
+			G = 1024 * M
+		)
+
+		if s < K {
+			return fmt.Sprintf("%.2f B/s", s)
+		} else if s < M {
+			return fmt.Sprintf("%.2f KB/s", s/K)
+		} else if s < G {
+			return fmt.Sprintf("%.2f MB/s", s/M)
+		} else {
+			return fmt.Sprintf("%.2f GB/s", s/G)
+		}
+	}
+
+	return human(up1), human(down1)
+}
+
 func (p *Proxyer) uplinkService() (_ error) {
 	var (
 		pkt = packet.Make(p.config.MaxRecvBuff)
@@ -138,6 +168,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 		} else if pkt.Data() == 0 {
 			continue
 		}
+		p.speed.Uplink(pkt.Data() + 20 + 8)
 
 		hdr := bvvd.Bvvd(pkt.Bytes())
 
@@ -282,6 +313,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 		} else if pkt.Data() == 0 {
 			continue
 		}
+		p.speed.Downlink(pkt.Data() + 20 + 8)
 
 		hdr := bvvd.Bvvd(pkt.Bytes())
 

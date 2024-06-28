@@ -29,6 +29,13 @@ func main() {
 		time.Sleep(time.Second)
 		require.NoError(t, p.AddForward(netip.MustParseAddrPort("45.131.69.50:19986")))  // 莫斯科
 		require.NoError(t, p.AddForward(netip.MustParseAddrPort("103.94.185.61:19986"))) // 洛杉矶
+
+		for {
+			time.Sleep(time.Second * 3)
+
+			up, down := p.Speed()
+			println("up", up, "down", down)
+		}
 	}()
 
 	err = p.Serve()
