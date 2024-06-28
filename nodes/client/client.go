@@ -125,6 +125,7 @@ func (c *Client) start() error {
 		slog.String("network", nodes.ProxyerNetwork),
 		slog.String("mode", "fix"),
 		slog.String("proxyer", paddr.String()),
+		slog.Int("forward", int(forward)),
 		slog.String("location", c.config.Location.String()),
 		slog.String("rtt", time.Since(start).String()),
 		slog.Bool("debug", debug.Debug()),
@@ -136,6 +137,7 @@ func (c *Client) start() error {
 func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (paddr netip.AddrPort, forward bvvd.ForwardID, err error) {
 	var msgIds []uint32
 
+	// start := time.Now()
 	var msg = nodes.Message{}
 	msg.Kind = bvvd.PingForward
 	msg.ForwardID = 0
@@ -160,6 +162,40 @@ func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (paddr net
 		}
 		return netip.AddrPort{}, 0, errors.Errorf("PingForward location:%s proxyers:%s timeout", loc.String(), strings.Join(pxys, ","))
 	}
+	// if debug.Debug() {
+	// 	go func() {
+	// 		var msgs = []nodes.Message{m}
+	// 		var idxs = []int{idx}
+	// 		var durs = []time.Duration{time.Since(start)}
+	// 		for {
+	// 			i := 0
+	// 			m, ok := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
+	// 				i = slices.Index(msgIds, m.MsgID)
+	// 				return i >= 0
+	// 			}, time.Second*5)
+	// 			if !ok {
+	// 				break
+	// 			}
+	// 			msgs = append(msgs, m)
+	// 			idxs = append(idxs, i)
+	// 			durs = append(durs, time.Since(start))
+	// 		}
+	// 		var es []string
+	// 		for i, e := range msgs {
+	// 			es = append(es,
+	// 				fmt.Sprintf(
+	// 					"%s-%d %s",
+	// 					c.config.Proxyers[idxs[i]].String(), int(e.ForwardID), durs[i].String(),
+	// 				),
+	// 			)
+	// 		}
+	// 		fmt.Println("replay", len(msgs))
+	// 		for _, e := range es {
+	// 			fmt.Println(e)
+	// 		}
+	// 	}()
+	// }
+
 	return c.config.Proxyers[idx], m.ForwardID, nil
 }
 
@@ -181,7 +217,8 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 	var (
 		start = time.Now()
 		kinds = []bvvd.Kind{
-			bvvd.PingProxyer, bvvd.PingForward, bvvd.PackLossClientUplink,
+			bvvd.PingProxyer, bvvd.PingForward,
+			bvvd.PackLossClientUplink,
 			bvvd.PackLossProxyerUplink, bvvd.PackLossProxyerDownlink,
 		}
 	)
@@ -230,17 +267,26 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 	return stats, err
 }
 
-func (c *Client) RouteProbe(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.ForwardID, err error) {
+func (c *Client) RouteProbe(saddr netip.Addr) (paddr netip.AddrPort, fid bvvd.ForwardID, err error) {
 	coord, err := IPCoord(saddr)
 	if err != nil {
 		return netip.AddrPort{}, 0, err
 	}
 	loc, offset := bvvd.Locations.Match(coord)
-	if debug.Debug() {
-		c.config.logger.Info("route probe", slog.Float64("offset", offset), slog.String("server", saddr.String()), slog.String("location", loc.String()))
+
+	paddr, fid, err = c.routeProbe(loc, time.Second*3)
+	if err != nil {
+		return netip.AddrPort{}, 0, err
 	}
 
-	return c.routeProbe(loc, time.Second*3)
+	c.config.logger.Info("route probe",
+		slog.Float64("offset", offset),
+		slog.String("server", saddr.String()),
+		slog.String("location", loc.String()),
+		slog.String("proxyer", paddr.String()),
+		slog.Int("forward", int(fid)),
+	)
+	return paddr, fid, nil
 }
 
 func (c *Client) uplinkService() (_ error) {
@@ -281,8 +327,8 @@ func (c *Client) uplinkService() (_ error) {
 
 		paddr, hdr.ForwardID, err = c.route.Match(hdr.Server, info.PlayData)
 		if errorx.Temporary(err) {
-			if errors.Is(ErrRouteProbe, err) {
-				c.config.logger.Info("route probe", slog.String("server", hdr.Server.String()))
+			if errors.Is(err, ErrRouteProbe) {
+				c.config.logger.Info("start route probe", slog.String("server", hdr.Server.String()))
 			}
 			continue // route probing
 		} else if err != nil {

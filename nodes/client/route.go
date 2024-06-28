@@ -45,10 +45,6 @@ type entry struct {
 	forward bvvd.ForwardID
 }
 
-func (e entry) valid() bool {
-	return e.paddr.IsValid() && e.forward.Vaid()
-}
-
 type RouteProbe interface {
 	RouteProbe(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.ForwardID, err error)
 }
@@ -71,9 +67,9 @@ func (r *route) Match(saddr netip.Addr, probe bool) (paddr netip.AddrPort, forwa
 	}
 
 	r.mu.RLock()
-	e := r.routes[saddr]
+	e, has := r.routes[saddr]
 	r.mu.RUnlock()
-	if e.valid() {
+	if has {
 		return e.paddr, e.forward, nil
 	}
 	return r.probe(saddr)
@@ -101,6 +97,7 @@ func (r *route) probe(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.Forw
 			r.mu.RLock()
 			e := r.routes[saddr]
 			r.mu.RUnlock()
+
 			paddr, forward = e.paddr, e.forward
 		}
 	} else {
@@ -122,6 +119,8 @@ func (r *route) probeRoute(saddr netip.Addr) {
 		r.routes[saddr] = entry{paddr, fid}
 		r.mu.Unlock()
 	}
+
+	// todo: inflight 可能会溢出，因为会优先查询routes, inflight可能永远无法删除已经完成的
 
 	r.inflightMu.Lock()
 	r.inflight[saddr] = result{err: err, done: true}

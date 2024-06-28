@@ -38,38 +38,51 @@ func (f *Forwards) GetByForward(fid bvvd.ForwardID) (*Forward, error) {
 func (f *Forwards) GetByLocation(loc bvvd.Location) []*Forward {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-
-	var fs = make([]*Forward, 0, len(f.fs))
-	for _, f := range f.fs {
-		fs = append(fs, f)
+	if len(f.fs) == 0 {
+		return nil
 	}
 
-	coord := loc.Coord()
-	slices.SortFunc(fs, func(a, b *Forward) int {
-		_, d1 := geodist.HaversineDistance(a.location.Coord(), coord)
-		_, d2 := geodist.HaversineDistance(b.location.Coord(), coord)
-		if d1 < d2 {
-			return -1
-		} else if d1 > d2 {
-			return 1
-		}
-		return 0
-	})
-
-	if len(fs) > 5 {
-		over := fs[0].location == fs[1].location && fs[1].location == fs[2].location
-		if over {
-			fs1 := []*Forward{fs[0], fs[1], fs[2]}
-			for i, e := range fs {
-				if i >= 3 && e.location != fs[0].location && len(fs1) <= 5 {
-					fs1 = append(fs1, e)
-				}
+	{ // loc 地址有对应的forward
+		var fs = []*Forward{}
+		for _, f := range f.fs {
+			if f.location == loc {
+				fs = append(fs, f)
 			}
-			return fs1
-		} else {
-			return fs[:5]
 		}
-	} else {
+		if len(fs) > 0 {
+			return fs
+		}
+	}
+
+	{ // loc 地址没有对应的forward
+
+		// 只能选择一个地区的forward。比如当前有莫斯科和洛杉矶的forward, server地址为
+		// 纽约，那么应该只是选择洛杉矶的forward（否则路由探测结果将是莫斯科）, 因为ping
+		// 探测没有优先级，将选取最快回复的forward。
+
+		locs := []bvvd.Location{}
+		for _, e := range f.fs {
+			locs = append(locs, e.location)
+		}
+
+		coord := loc.Coord()
+		slices.SortFunc(locs, func(a, b bvvd.Location) int {
+			_, d1 := geodist.HaversineDistance(a.Coord(), coord)
+			_, d2 := geodist.HaversineDistance(b.Coord(), coord)
+			if d1 < d2 {
+				return -1
+			} else if d1 > d2 {
+				return 1
+			}
+			return 0
+		})
+
+		var fs []*Forward
+		for _, e := range f.fs {
+			if e.location == locs[0] && len(fs) <= 3 {
+				fs = append(fs, e)
+			}
+		}
 		return fs
 	}
 }

@@ -69,7 +69,7 @@ func (n *NetworkStates) String() string {
 	var s = &strings.Builder{}
 
 	p2 := time.Duration(0)
-	if p2 > 0 && n.PingProxyer > 0 && p2 > n.PingProxyer {
+	if n.PingProxyer > 0 && n.PingForward > n.PingProxyer {
 		p2 = n.PingForward - n.PingProxyer
 	}
 	var elems = []string{
