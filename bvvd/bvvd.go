@@ -63,12 +63,12 @@ func (b Bvvd) SetServer(server netip.Addr) {
 }
 
 type Fields struct {
-	Kind      Kind
-	Proto     uint8
-	DataID    uint8
-	ForwardID ForwardID // forward id
-	Client    netip.AddrPort
-	Server    netip.Addr
+	Kind      Kind           // kind
+	Proto     uint8          // tcp or udp
+	DataID    uint8          // PL statistics
+	ForwardID ForwardID      // forward id
+	Client    netip.AddrPort // client addr, set by gateway
+	Server    netip.Addr     // destination ip
 }
 
 const MaxID = 0xff
@@ -146,22 +146,22 @@ const (
 	// 必须要设置ForwardID
 	Data
 
-	// rtt client  <--> proxyer
-	PingProxyer
+	// rtt client  <--> gateway
+	PingGateway
 
 	// rtt client  <--> forward
 	// 此数据包除了延时、还有探测路由的作用，如果Clinet发送时没有设置ForwardID, 那么应该负载Location
 	// Forward 回复此数据包时，必须负载ForwardID
 	PingForward
 
-	// pl  client  ---> proxyer
+	// pl  client  ---> gateway
 	PackLossClientUplink
 
-	// pl  proxyer ---> forward
-	PackLossProxyerUplink
+	// pl  gateway ---> forward
+	PackLossGatewayUplink
 
-	// pl  forward ---> proxyer
-	PackLossProxyerDownlink
+	// pl  forward ---> gateway
+	PackLossGatewayDownlink
 	_kind_end
 )
 

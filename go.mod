@@ -3,7 +3,6 @@ module github.com/lysShub/anton-planet-accelerator
 go 1.22.0
 
 require (
-	bou.ke/monkey v1.0.2
 	gioui.org v0.6.0
 	github.com/jftuga/geodist v1.0.0
 	github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61

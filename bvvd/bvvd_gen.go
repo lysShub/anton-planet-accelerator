@@ -9,15 +9,15 @@ func _() {
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
 	_ = x[Data-1]
-	_ = x[PingProxyer-2]
+	_ = x[PingGateway-2]
 	_ = x[PingForward-3]
 	_ = x[PackLossClientUplink-4]
-	_ = x[PackLossProxyerUplink-5]
-	_ = x[PackLossProxyerDownlink-6]
+	_ = x[PackLossGatewayUplink-5]
+	_ = x[PackLossGatewayDownlink-6]
 	_ = x[_kind_end-7]
 }
 
-const _Kind_name = "DataPingProxyerPingForwardPackLossClientUplinkPackLossProxyerUplinkPackLossProxyerDownlink_kind_end"
+const _Kind_name = "DataPingGatewayPingForwardPackLossClientUplinkPackLossGatewayUplinkPackLossGatewayDownlink_kind_end"
 
 var _Kind_index = [...]uint8{0, 4, 15, 26, 46, 67, 90, 99}
 

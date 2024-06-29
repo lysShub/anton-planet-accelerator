@@ -18,38 +18,38 @@ func Test_NetworkStates(t *testing.T) {
 
 func Test_TrunkRoute(t *testing.T) {
 	var (
-		paddr = netip.MustParseAddrPort("1.2.3.4:567")
+		gaddr = netip.MustParseAddrPort("1.2.3.4:567")
 		fid   = bvvd.ForwardID(1)
 	)
 
 	t.Run("not update", func(t *testing.T) {
-		var tr = newTrunkRouteRecorder(time.Second, paddr, fid)
+		var tr = newTrunkRouteRecorder(time.Second, gaddr, fid)
 
 		p, f, update := tr.Trunk()
-		require.Equal(t, paddr, p)
+		require.Equal(t, gaddr, p)
 		require.Equal(t, fid, f)
 		require.True(t, update)
 	})
 
 	t.Run("not update2", func(t *testing.T) {
-		var tr = newTrunkRouteRecorder(time.Second, paddr, fid)
+		var tr = newTrunkRouteRecorder(time.Second, gaddr, fid)
 
 		{
 			p, f, update := tr.Trunk()
-			require.Equal(t, paddr, p)
+			require.Equal(t, gaddr, p)
 			require.Equal(t, fid, f)
 			require.True(t, update)
 		}
 		{
 			p, f, update := tr.Trunk()
-			require.Equal(t, paddr, p)
+			require.Equal(t, gaddr, p)
 			require.Equal(t, fid, f)
 			require.False(t, update)
 		}
 	})
 
 	t.Run("update", func(t *testing.T) {
-		var tr = newTrunkRouteRecorder(time.Second, paddr, fid)
+		var tr = newTrunkRouteRecorder(time.Second, gaddr, fid)
 
 		tr.Update(
 			netip.MustParseAddrPort("0.0.0.0:111"),
@@ -63,7 +63,7 @@ func Test_TrunkRoute(t *testing.T) {
 	})
 
 	t.Run("update2", func(t *testing.T) {
-		var tr = newTrunkRouteRecorder(time.Second, paddr, fid)
+		var tr = newTrunkRouteRecorder(time.Second, gaddr, fid)
 
 		tr.Update(
 			netip.MustParseAddrPort("0.0.0.0:111"),
@@ -85,7 +85,7 @@ func Test_TrunkRoute(t *testing.T) {
 	})
 
 	t.Run("update timeout scale", func(t *testing.T) {
-		var tr = newTrunkRouteRecorder(time.Second, paddr, fid)
+		var tr = newTrunkRouteRecorder(time.Second, gaddr, fid)
 
 		tr.Update(
 			netip.MustParseAddrPort("0.0.0.0:111"),
@@ -103,14 +103,14 @@ func Test_TrunkRoute(t *testing.T) {
 
 		{
 			p, f, update := tr.Trunk()
-			require.Equal(t, paddr, p)
+			require.Equal(t, gaddr, p)
 			require.Equal(t, fid, f)
 			require.True(t, update)
 		}
 	})
 
 	t.Run("update timeout scale2", func(t *testing.T) {
-		var tr = newTrunkRouteRecorder(time.Second, paddr, fid)
+		var tr = newTrunkRouteRecorder(time.Second, gaddr, fid)
 
 		tr.Update(
 			netip.MustParseAddrPort("0.0.0.0:111"),
@@ -126,7 +126,7 @@ func Test_TrunkRoute(t *testing.T) {
 		time.Sleep(time.Second * 2)
 		{
 			p, f, update := tr.Trunk()
-			require.Equal(t, paddr, p)
+			require.Equal(t, gaddr, p)
 			require.Equal(t, fid, f)
 			require.True(t, update)
 		}

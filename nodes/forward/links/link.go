@@ -31,19 +31,19 @@ type Link struct {
 	alive atomic.Uint32
 
 	ep     Endpoint
-	paddr  netip.AddrPort
+	gaddr  netip.AddrPort
 	laddr  netip.AddrPort
 	header bvvd.Fields
 
 	closeErr errorx.CloseErr
 }
 
-func newLink(links *Links, link Endpoint, paddr netip.AddrPort, forwardID bvvd.ForwardID) (*Link, error) {
+func newLink(links *Links, link Endpoint, gaddr netip.AddrPort, forwardID bvvd.ForwardID) (*Link, error) {
 	var (
 		l = &Link{
 			links: links,
 			ep:    link,
-			paddr: paddr,
+			gaddr: gaddr,
 			header: bvvd.Fields{
 				Kind:      bvvd.Data,
 				Proto:     link.proto,
@@ -149,5 +149,5 @@ func (l *Link) Send(pkt *packet.Packet) error {
 	return nil
 }
 func (l *Link) Endpoint() Endpoint      { return l.ep }
-func (l *Link) Proxyer() netip.AddrPort { return l.paddr }
+func (l *Link) Gateway() netip.AddrPort { return l.gaddr }
 func (l *Link) LocalAddr() net.Addr     { return l.lis.Addr() }

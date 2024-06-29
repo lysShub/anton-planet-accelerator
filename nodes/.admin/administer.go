@@ -70,7 +70,7 @@ func (c *Control) muxHandle(conn *net.TCPConn) (_ error) {
 	switch kind := initMsg.Kind(); kind {
 	case KindClientNew:
 
-	case KindProxyerNew:
+	case KindGatewayNew:
 
 	case KindForwardNew:
 	default:

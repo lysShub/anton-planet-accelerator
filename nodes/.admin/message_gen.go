@@ -9,14 +9,14 @@ func _() {
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
 	_ = x[KindClientNew-1]
-	_ = x[KindProxyerNew-2]
+	_ = x[KindGatewayNew-2]
 	_ = x[KindForwardNew-3]
 	_ = x[KindClientRoute-4]
 	_ = x[KindProxyAddForward-5]
 	_ = x[KindForwardStop-6]
 }
 
-const _Kind_name = "KindClientNewKindProxyerNewKindForwardNewKindClientRouteKindProxyAddForwardKindForwardStop"
+const _Kind_name = "KindClientNewKindGatewayNewKindForwardNewKindClientRouteKindProxyAddForwardKindForwardStop"
 
 var _Kind_index = [...]uint8{0, 13, 27, 41, 56, 75, 90}
 

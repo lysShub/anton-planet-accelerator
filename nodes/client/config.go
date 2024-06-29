@@ -21,7 +21,7 @@ type Config struct {
 
 	FixRoute bool
 	Location bvvd.Location
-	Proxyers []netip.AddrPort
+	Gateways []netip.AddrPort
 }
 
 func (c *Config) init() *Config {
@@ -52,8 +52,8 @@ func (c *Config) init() *Config {
 		panic("require location")
 	}
 
-	if len(c.Proxyers) == 0 {
-		panic("require proxyers")
+	if len(c.Gateways) == 0 {
+		panic("require gateways")
 	}
 
 	return c

@@ -1,13 +1,13 @@
 //go:build linux
 // +build linux
 
-package proxyer_test
+package gateway_test
 
 import (
 	"fmt"
 	"testing"
 
-	"github.com/lysShub/anton-planet-accelerator/nodes/proxyer"
+	"github.com/lysShub/anton-planet-accelerator/nodes/gateway"
 	"github.com/lysShub/netkit/debug"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +17,7 @@ import (
 func TestXxxx(t *testing.T) {
 	fmt.Println(debug.Debug())
 
-	config := proxyer.Config{
+	config := gateway.Config{
 		MaxRecvBuff: 1536,
 
 		// Forwards: []struct {
@@ -31,7 +31,7 @@ func TestXxxx(t *testing.T) {
 		// },
 	}
 
-	p, err := proxyer.New(":19986", &config)
+	p, err := gateway.New(":19986", &config)
 	require.NoError(t, err)
 
 	err = p.Serve()

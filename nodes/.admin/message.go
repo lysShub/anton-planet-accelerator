@@ -19,7 +19,7 @@ type Kind uint8
 const (
 	_ Kind = iota
 	KindClientNew
-	KindProxyerNew
+	KindGatewayNew
 	KindForwardNew
 	KindClientRoute
 	KindProxyAddForward
@@ -46,8 +46,8 @@ type ClientNew struct {
 
 func (ClientNew) Kind() Kind { return KindClientNew }
 
-// 新增Proxyer请求
-type ProxyerNew struct {
+// 新增Gateway请求
+type GatewayNew struct {
 	Name          string
 	Token         string // 私有算法,验证token，确保Proxer的合法性 todo: 用tls双向认证
 	Addr          netip.AddrPort
@@ -57,7 +57,7 @@ type ProxyerNew struct {
 	Msg string
 }
 
-func (ProxyerNew) Kind() Kind { return KindProxyerNew }
+func (GatewayNew) Kind() Kind { return KindGatewayNew }
 
 // 新增Forward请求
 type ForwardNew struct {
@@ -77,12 +77,12 @@ type ClientRoute struct {
 
 	Ok      bool
 	Msg     string
-	Proxyer netip.AddrPort
+	Gateway netip.AddrPort
 }
 
 func (ClientRoute) Kind() Kind { return KindClientRoute }
 
-// 为Proxyer新增Forward
+// 为Gateway新增Forward
 type ProxyAddForward struct {
 	Name     string
 	Addr     netip.AddrPort

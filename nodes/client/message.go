@@ -57,25 +57,25 @@ func (m *messageManager) PopBy(fn func(nodes.Message) (pop bool), timeout time.D
 }
 
 type NetworkStates struct {
-	PingProxyer             time.Duration
+	PingGateway             time.Duration
 	PingForward             time.Duration
 	PackLossClientUplink    nodes.PL
 	PackLossClientDownlink  nodes.PL
-	PackLossProxyerUplink   nodes.PL
-	PackLossProxyerDownlink nodes.PL
+	PackLossGatewayUplink   nodes.PL
+	PackLossGatewayDownlink nodes.PL
 }
 
 func (n *NetworkStates) String() string {
 	var s = &strings.Builder{}
 
 	p2 := time.Duration(0)
-	if n.PingProxyer > 0 && n.PingForward > n.PingProxyer {
-		p2 = n.PingForward - n.PingProxyer
+	if n.PingGateway > 0 && n.PingForward > n.PingGateway {
+		p2 = n.PingForward - n.PingGateway
 	}
 	var elems = []string{
-		"ping", n.strdur(n.PingProxyer), n.strdur(p2),
-		"pl↑", n.PackLossClientUplink.String(), n.PackLossProxyerUplink.String(),
-		"pl↓", n.PackLossClientDownlink.String(), n.PackLossProxyerDownlink.String(),
+		"ping", n.strdur(n.PingGateway), n.strdur(p2),
+		"pl↑", n.PackLossClientUplink.String(), n.PackLossGatewayUplink.String(),
+		"pl↓", n.PackLossClientDownlink.String(), n.PackLossGatewayDownlink.String(),
 	}
 
 	const size = 6
@@ -118,26 +118,26 @@ type trunkRouteRecorder struct {
 
 	updateTime time.Time
 	updated    bool
-	paddr      netip.AddrPort
+	gaddr      netip.AddrPort
 	forward    bvvd.ForwardID
 }
 
-func newTrunkRouteRecorder(scale time.Duration, paddr netip.AddrPort, forward bvvd.ForwardID) *trunkRouteRecorder {
+func newTrunkRouteRecorder(scale time.Duration, gaddr netip.AddrPort, forward bvvd.ForwardID) *trunkRouteRecorder {
 	return &trunkRouteRecorder{
 		scale:       scale,
-		initPaddr:   paddr,
+		initPaddr:   gaddr,
 		initForward: forward,
 	}
 }
 
-func (r *trunkRouteRecorder) Trunk() (paddr netip.AddrPort, forward bvvd.ForwardID, updata bool) {
+func (r *trunkRouteRecorder) Trunk() (gaddr netip.AddrPort, forward bvvd.ForwardID, updata bool) {
 	r.Lock()
 	defer r.Unlock()
 
 	if time.Since(r.updateTime) < r.scale {
 		updata = r.updated || r.lastWasInit
 		r.updated, r.lastWasInit = false, false
-		return r.paddr, r.forward, updata
+		return r.gaddr, r.forward, updata
 	} else {
 		updata = !r.lastWasInit
 		r.lastWasInit = true
@@ -145,12 +145,12 @@ func (r *trunkRouteRecorder) Trunk() (paddr netip.AddrPort, forward bvvd.Forward
 	}
 }
 
-func (r *trunkRouteRecorder) Update(paddr netip.AddrPort, forward bvvd.ForwardID) {
+func (r *trunkRouteRecorder) Update(gaddr netip.AddrPort, forward bvvd.ForwardID) {
 	r.Lock()
 	defer r.Unlock()
 
-	if r.paddr != paddr {
-		r.paddr, r.updated = paddr, true
+	if r.gaddr != gaddr {
+		r.gaddr, r.updated = gaddr, true
 	}
 	if r.forward != forward {
 		r.forward, r.updated = forward, true

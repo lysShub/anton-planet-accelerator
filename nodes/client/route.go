@@ -20,7 +20,7 @@ type route struct {
 	fixRouteMode bool
 
 	// fixRoute 或者 autoRout 中的非PlayData, 都发送到default
-	defaultProxyer netip.AddrPort
+	defaultGateway netip.AddrPort
 	defaultForward bvvd.ForwardID
 
 	mu     sync.RWMutex
@@ -41,41 +41,41 @@ func newRoute(fixRoute bool) *route {
 }
 
 type entry struct {
-	paddr   netip.AddrPort
+	gaddr   netip.AddrPort
 	forward bvvd.ForwardID
 }
 
 type RouteProbe interface {
-	RouteProbe(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.ForwardID, err error)
+	RouteProbe(saddr netip.Addr) (gaddr netip.AddrPort, forward bvvd.ForwardID, err error)
 }
 
-func (r *route) Init(probe RouteProbe, defaultProxyer netip.AddrPort, defaultForward bvvd.ForwardID) {
+func (r *route) Init(probe RouteProbe, defaultGateway netip.AddrPort, defaultForward bvvd.ForwardID) {
 	if !r.inited.Swap(true) {
-		r.defaultProxyer = defaultProxyer
+		r.defaultGateway = defaultGateway
 		r.defaultForward = defaultForward
 
 		r.routeProbe = probe
 	}
 }
 
-func (r *route) Match(saddr netip.Addr, probe bool) (paddr netip.AddrPort, forward bvvd.ForwardID, err error) {
+func (r *route) Match(saddr netip.Addr, probe bool) (gaddr netip.AddrPort, forward bvvd.ForwardID, err error) {
 	if !r.inited.Load() {
 		return netip.AddrPort{}, 0, errors.New("route not init")
 	}
 	if !probe || r.fixRouteMode {
-		return r.defaultProxyer, r.defaultForward, nil
+		return r.defaultGateway, r.defaultForward, nil
 	}
 
 	r.mu.RLock()
 	e, has := r.routes[saddr]
 	r.mu.RUnlock()
 	if has {
-		return e.paddr, e.forward, nil
+		return e.gaddr, e.forward, nil
 	}
 	return r.probe(saddr)
 }
 
-func (r *route) probe(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.ForwardID, err error) {
+func (r *route) probe(saddr netip.Addr) (gaddr netip.AddrPort, forward bvvd.ForwardID, err error) {
 	r.inflightMu.RLock()
 	rest, has := r.inflight[saddr]
 	r.inflightMu.RUnlock()
@@ -98,13 +98,13 @@ func (r *route) probe(saddr netip.Addr) (paddr netip.AddrPort, forward bvvd.Forw
 			e := r.routes[saddr]
 			r.mu.RUnlock()
 
-			paddr, forward = e.paddr, e.forward
+			gaddr, forward = e.gaddr, e.forward
 		}
 	} else {
 		err = errorx.WrapTemp(ErrRouteProbing)
 	}
 
-	return paddr, forward, err
+	return gaddr, forward, err
 }
 
 type result struct {
@@ -113,10 +113,10 @@ type result struct {
 }
 
 func (r *route) probeRoute(saddr netip.Addr) {
-	paddr, fid, err := r.routeProbe.RouteProbe(saddr)
+	gaddr, fid, err := r.routeProbe.RouteProbe(saddr)
 	if err == nil {
 		r.mu.Lock()
-		r.routes[saddr] = entry{paddr, fid}
+		r.routes[saddr] = entry{gaddr, fid}
 		r.mu.Unlock()
 	}
 

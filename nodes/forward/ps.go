@@ -9,45 +9,45 @@ import (
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 )
 
-type Proxyers struct {
+type Gateways struct {
 	mu sync.RWMutex
-	ps map[netip.AddrPort]*Proxyer
+	ps map[netip.AddrPort]*Gateway
 	// todo: keepalive
 }
 
-func NewProxyers() *Proxyers {
-	return &Proxyers{
-		ps: map[netip.AddrPort]*Proxyer{},
+func NewGateways() *Gateways {
+	return &Gateways{
+		ps: map[netip.AddrPort]*Gateway{},
 	}
 }
 
-func (ps *Proxyers) Proxyer(paddr netip.AddrPort) *Proxyer {
+func (ps *Gateways) Gateway(gaddr netip.AddrPort) *Gateway {
 	ps.mu.RLock()
-	p := ps.ps[paddr]
+	p := ps.ps[gaddr]
 	ps.mu.RUnlock()
 
 	if p == nil {
-		p = &Proxyer{uplinkPL: nodes.NewPLStats(bvvd.MaxID)}
+		p = &Gateway{uplinkPL: nodes.NewPLStats(bvvd.MaxID)}
 		ps.mu.Lock()
-		ps.ps[paddr] = p
+		ps.ps[gaddr] = p
 		ps.mu.Unlock()
 	}
 	return p
 }
 
-type Proxyer struct {
+type Gateway struct {
 	uplinkPL   *nodes.PLStats
 	downlinkID atomic.Uint32
 }
 
-func (p *Proxyer) UplinkID(id uint8) {
+func (p *Gateway) UplinkID(id uint8) {
 	p.uplinkPL.ID(int(id))
 }
 
-func (p *Proxyer) UplinkPL() nodes.PL {
+func (p *Gateway) UplinkPL() nodes.PL {
 	return nodes.PL(p.uplinkPL.PL(nodes.PLScale))
 }
 
-func (p *Proxyer) DownlinkID() uint8 {
+func (p *Gateway) DownlinkID() uint8 {
 	return uint8(p.downlinkID.Add(1) - 1)
 }

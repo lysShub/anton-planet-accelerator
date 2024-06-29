@@ -22,14 +22,14 @@ type Message struct {
 
 func (m *Message) Encode(to *packet.Packet) (err error) {
 	switch m.Kind {
-	case bvvd.PingProxyer:
+	case bvvd.PingGateway:
 	case bvvd.PingForward:
 		if !m.ForwardID.Vaid() && m.Payload == nil {
 			return errors.Errorf("PingForward message require ForwardID or Payload")
 		}
 	case bvvd.PackLossClientUplink:
-	case bvvd.PackLossProxyerUplink:
-	case bvvd.PackLossProxyerDownlink:
+	case bvvd.PackLossGatewayUplink:
+	case bvvd.PackLossGatewayDownlink:
 	default:
 		return errors.Errorf("unknown message kind %s", m.Kind.String())
 	}
@@ -50,7 +50,7 @@ func (m *Message) Encode(to *packet.Packet) (err error) {
 
 	if m.Payload != nil {
 		switch m.Kind {
-		case bvvd.PackLossClientUplink, bvvd.PackLossProxyerUplink, bvvd.PackLossProxyerDownlink:
+		case bvvd.PackLossClientUplink, bvvd.PackLossGatewayUplink, bvvd.PackLossGatewayDownlink:
 			pl, ok := m.Payload.(PL)
 			if !ok {
 				return errors.Errorf("invalid data type %T", m.Payload)
@@ -93,14 +93,14 @@ func (m *Message) Decode(from *packet.Packet) error {
 	}
 
 	switch m.Kind {
-	case bvvd.PingProxyer:
+	case bvvd.PingGateway:
 	case bvvd.PingForward:
 		if from.Data() > 0 {
 			m.Payload = bvvd.Location(from.Detach(make([]byte, 1))[0])
 		} else if !m.ForwardID.Vaid() {
 			return errors.Errorf("PingForward message require ForwardID or Payload")
 		}
-	case bvvd.PackLossProxyerUplink, bvvd.PackLossClientUplink, bvvd.PackLossProxyerDownlink:
+	case bvvd.PackLossGatewayUplink, bvvd.PackLossClientUplink, bvvd.PackLossGatewayDownlink:
 		if from.Data() > 0 {
 			var pl PL
 			if err := pl.Decode(from); err != nil {

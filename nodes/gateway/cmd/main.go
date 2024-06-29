@@ -8,7 +8,7 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/lysShub/anton-planet-accelerator/nodes/proxyer"
+	"github.com/lysShub/anton-planet-accelerator/nodes/gateway"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/rawsock/test"
 	"github.com/stretchr/testify/require"
@@ -17,12 +17,12 @@ import (
 func main() {
 	fmt.Println(debug.Debug())
 
-	config := proxyer.Config{
+	config := gateway.Config{
 		MaxRecvBuff: 2048,
 	}
 
 	var t = test.T()
-	p, err := proxyer.New(":19986", &config)
+	p, err := gateway.New(":19986", &config)
 	require.NoError(t, err)
 
 	go func() {

@@ -1,4 +1,4 @@
-package proxyer
+package gateway
 
 import (
 	"net/netip"
@@ -108,11 +108,11 @@ type Forward struct {
 	id       bvvd.ForwardID
 	location bvvd.Location
 
-	uplinkID atomic.Uint32 // proxyer-->forward inc id
+	uplinkID atomic.Uint32 // gateway-->forward inc id
 
-	uplinkPL atomic.Uintptr // proxyer-->forward pl
+	uplinkPL atomic.Uintptr // gateway-->forward pl
 
-	donwlinkPL *nodes.PLStats // forward-->proxyer pl
+	donwlinkPL *nodes.PLStats // forward-->gateway pl
 }
 
 func newForward(loc bvvd.Location, id bvvd.ForwardID, faddr netip.AddrPort) (*Forward, error) {
@@ -149,7 +149,7 @@ func (f *Forward) DownlinkPL() nodes.PL {
 }
 
 func (f *Forward) UplinkPL() nodes.PL {
-	// todo: will cause PackLossProxyerUplink keep last value, when not data uplink transmit
+	// todo: will cause PackLossGatewayUplink keep last value, when not data uplink transmit
 	tmp := f.uplinkPL.Load()
 	return *(*nodes.PL)(unsafe.Pointer(&tmp))
 }

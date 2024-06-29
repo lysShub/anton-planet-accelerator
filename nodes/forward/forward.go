@@ -26,7 +26,7 @@ type Forward struct {
 	forwardID bvvd.ForwardID
 
 	conn conn.Conn
-	ps   *Proxyers
+	ps   *Gateways
 
 	links *links.Links
 
@@ -37,7 +37,7 @@ func New(addr string, config *Config) (*Forward, error) {
 	var f = &Forward{
 		config:    config.init(),
 		forwardID: config.ForwardID,
-		ps:        NewProxyers(),
+		ps:        NewGateways(),
 		links:     links.NewLinks(),
 	}
 	err := nodes.DisableOffload(config.logger)
@@ -80,7 +80,7 @@ func (f *Forward) uplinkService() (err error) {
 	)
 
 	for {
-		paddr, err := f.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
+		gaddr, err := f.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
 		if err != nil {
 			return f.close(err)
 		} else if pkt.Data() < bvvd.Size {
@@ -103,26 +103,26 @@ func (f *Forward) uplinkService() (err error) {
 				continue
 			}
 
-			if err := f.conn.WriteToAddrPort(pkt, paddr); err != nil {
+			if err := f.conn.WriteToAddrPort(pkt, gaddr); err != nil {
 				return f.close(err)
 			}
-		case bvvd.PackLossProxyerUplink:
+		case bvvd.PackLossGatewayUplink:
 			var msg nodes.Message
 			if err := msg.Decode(pkt); err != nil {
 				f.config.logger.Error(err.Error(), errorx.Trace(err))
 				continue
 			}
-			msg.Payload = f.ps.Proxyer(paddr).UplinkPL()
+			msg.Payload = f.ps.Gateway(gaddr).UplinkPL()
 			if err := msg.Encode(pkt.SetData(0)); err != nil {
 				f.config.logger.Error(err.Error(), errorx.Trace(err))
 				continue
 			}
 
-			if err := f.conn.WriteToAddrPort(pkt, paddr); err != nil {
+			if err := f.conn.WriteToAddrPort(pkt, gaddr); err != nil {
 				return f.close(err)
 			}
 		case bvvd.Data:
-			f.ps.Proxyer(paddr).UplinkID(hdr.DataID())
+			f.ps.Gateway(gaddr).UplinkID(hdr.DataID())
 
 			// remove bvvd header
 			pkt = pkt.DetachN(bvvd.Size)
@@ -136,7 +136,7 @@ func (f *Forward) uplinkService() (err error) {
 
 			// read/create corresponding link, the link will self close by keepalive,
 			// so if Send/Recv return net.ErrClosed error should ignore.
-			link, new, err := f.links.Link(ep, paddr, f.forwardID)
+			link, new, err := f.links.Link(ep, gaddr, f.forwardID)
 			if err != nil {
 				return f.close(err)
 			} else if new {
@@ -172,14 +172,14 @@ func (f *Forward) downlinkService(link *links.Link) (_ error) {
 			}
 		}
 
-		id := f.ps.Proxyer(link.Proxyer()).DownlinkID()
+		id := f.ps.Gateway(link.Gateway()).DownlinkID()
 		bvvd.Bvvd(pkt.Bytes()).SetDataID(id)
 
 		if debug.Debug() && rand.Int()%100 == 99 {
-			continue // PackLossProxyerDownlink
+			continue // PackLossGatewayDownlink
 		}
 
-		if err := f.conn.WriteToAddrPort(pkt, link.Proxyer()); err != nil {
+		if err := f.conn.WriteToAddrPort(pkt, link.Gateway()); err != nil {
 			return f.close(err)
 		}
 	}

@@ -1,7 +1,7 @@
 //go:build linux
 // +build linux
 
-package proxyer
+package gateway
 
 import (
 	"fmt"
@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type Proxyer struct {
+type Gateway struct {
 	config *Config
 	start  atomic.Bool
 
@@ -38,8 +38,8 @@ type Proxyer struct {
 	closeErr errorx.CloseErr
 }
 
-func New(addr string, config *Config) (*Proxyer, error) {
-	var p = &Proxyer{
+func New(addr string, config *Config) (*Gateway, error) {
+	var p = &Gateway{
 		config:  config.init(),
 		cs:      NewClients(),
 		fs:      NewForwards(),
@@ -52,7 +52,7 @@ func New(addr string, config *Config) (*Proxyer, error) {
 		return nil, err
 	}
 
-	p.conn, err = conn.Bind(nodes.ProxyerNetwork, addr)
+	p.conn, err = conn.Bind(nodes.GatewayNetwork, addr)
 	if err != nil {
 		return nil, p.close(err)
 	}
@@ -65,7 +65,7 @@ func New(addr string, config *Config) (*Proxyer, error) {
 	return p, nil
 }
 
-func (p *Proxyer) close(cause error) error {
+func (p *Gateway) close(cause error) error {
 	cause = errors.WithStack(cause)
 	if cause != nil {
 		p.config.logger.Error(cause.Error(), errorx.Trace(cause))
@@ -87,9 +87,9 @@ func (p *Proxyer) close(cause error) error {
 	})
 }
 
-func (p *Proxyer) Serve() (err error) {
+func (p *Gateway) Serve() (err error) {
 	if p.start.Swap(true) {
-		return errors.Errorf("proxyer started")
+		return errors.Errorf("gateway started")
 	}
 	p.config.logger.Info("start", slog.String("listen", p.conn.LocalAddr().String()), slog.Bool("debug", debug.Debug()))
 
@@ -97,9 +97,9 @@ func (p *Proxyer) Serve() (err error) {
 	return p.close(p.uplinkService())
 }
 
-func (p *Proxyer) AddForward(faddr netip.AddrPort) error {
+func (p *Gateway) AddForward(faddr netip.AddrPort) error {
 	if !p.start.Load() {
-		return errors.Errorf("proxyer not start")
+		return errors.Errorf("gateway not start")
 	}
 
 	// get forward locatinon by PingForward
@@ -132,7 +132,7 @@ func (p *Proxyer) AddForward(faddr netip.AddrPort) error {
 	return nil
 }
 
-func (p *Proxyer) Speed() (up, down string) {
+func (p *Gateway) Speed() (up, down string) {
 	up1, down1 := p.speed.Speed()
 
 	var human = func(s float64) string {
@@ -156,7 +156,7 @@ func (p *Proxyer) Speed() (up, down string) {
 	return human(up1), human(down1)
 }
 
-func (p *Proxyer) uplinkService() (_ error) {
+func (p *Gateway) uplinkService() (_ error) {
 	var (
 		pkt = packet.Make(p.config.MaxRecvBuff)
 	)
@@ -173,7 +173,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 		hdr := bvvd.Bvvd(pkt.Bytes())
 
 		switch kind := hdr.Kind(); kind {
-		case bvvd.PingProxyer:
+		case bvvd.PingGateway:
 			if err := p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
@@ -230,7 +230,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
-		case bvvd.PackLossProxyerDownlink, bvvd.PackLossProxyerUplink:
+		case bvvd.PackLossGatewayDownlink, bvvd.PackLossGatewayUplink:
 			f, err := p.fs.GetByForward(hdr.ForwardID())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
@@ -242,7 +242,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
 				continue
 			}
-			if kind == bvvd.PackLossProxyerDownlink {
+			if kind == bvvd.PackLossGatewayDownlink {
 				msg.Payload = f.DownlinkPL()
 			} else {
 				msg.Payload = f.UplinkPL()
@@ -273,17 +273,17 @@ func (p *Proxyer) uplinkService() (_ error) {
 			hdr.SetClient(caddr)
 			hdr.SetDataID(f.UplinkID())
 			if debug.Debug() && rand.Int()%100 == 99 {
-				continue // PackLossProxyerUplink
+				continue // PackLossGatewayUplink
 			}
 
 			if err = p.sender.WriteToAddrPort(pkt, f.Addr()); err != nil {
 				return p.close(err)
 			}
 
-			// query proxyer --> forward pack loss
+			// query gateway --> forward pack loss
 			if hdr.DataID() == 0xff {
 				var msg = nodes.Message{MsgID: 1} // todo: 多个forward时还是要设置有效ID
-				msg.Kind = bvvd.PackLossProxyerUplink
+				msg.Kind = bvvd.PackLossGatewayUplink
 				msg.ForwardID = hdr.ForwardID()
 				msg.Client = hdr.Client()
 
@@ -301,7 +301,7 @@ func (p *Proxyer) uplinkService() (_ error) {
 	}
 }
 
-func (p *Proxyer) donwlinkService() (_ error) {
+func (p *Gateway) donwlinkService() (_ error) {
 	var (
 		pkt = packet.Make(p.config.MaxRecvBuff)
 	)
@@ -335,7 +335,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
-		case bvvd.PackLossProxyerUplink:
+		case bvvd.PackLossGatewayUplink:
 			f, err := p.fs.GetByForward(hdr.ForwardID())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
@@ -355,7 +355,7 @@ func (p *Proxyer) donwlinkService() (_ error) {
 			}
 		case bvvd.PingForward:
 			if hdr.Client().Addr().IsUnspecified() {
-				// is proxyer PingForard, without set Client
+				// is gateway PingForard, without set Client
 				var msg nodes.Message
 				if err := msg.Decode(pkt); err != nil {
 					p.config.logger.Warn(err.Error(), errorx.Trace(nil))

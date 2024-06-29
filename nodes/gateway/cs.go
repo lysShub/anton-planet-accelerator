@@ -1,4 +1,4 @@
-package proxyer
+package gateway
 
 import (
 	"net/netip"
