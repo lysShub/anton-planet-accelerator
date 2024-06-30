@@ -2,12 +2,9 @@ package gateway
 
 import (
 	"net/netip"
-	"slices"
 	"sync"
 	"sync/atomic"
-	"unsafe"
 
-	"github.com/jftuga/geodist"
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/nodes/internal/stats"
@@ -25,7 +22,7 @@ func NewForwards() *Forwards {
 	}
 }
 
-func (f *Forwards) GetByForward(faddr netip.AddrPort) (*Forward, error) {
+func (f *Forwards) Get(faddr netip.AddrPort) (*Forward, error) {
 	f.mu.RLock()
 	fw, has := f.fs[faddr]
 	f.mu.RUnlock()
@@ -35,57 +32,14 @@ func (f *Forwards) GetByForward(faddr netip.AddrPort) (*Forward, error) {
 	return fw, nil
 }
 
-// GetByLoc get best perfect forwards by location
-func (f *Forwards) GetByLocation(loc bvvd.Location) []*Forward {
+func (f *Forwards) Forwards() (fs []netip.AddrPort) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	if len(f.fs) == 0 {
-		return nil
+
+	for _, e := range f.fs {
+		fs = append(fs, e.faddr)
 	}
-
-	{ // loc 地址有对应的forward
-		var fs = []*Forward{}
-		for _, f := range f.fs {
-			if f.location == loc {
-				fs = append(fs, f)
-			}
-		}
-		if len(fs) > 0 {
-			return fs
-		}
-	}
-
-	{ // loc 地址没有对应的forward
-
-		// 只能选择一个地区的forward。比如当前有莫斯科和洛杉矶的forward, server地址为
-		// 纽约，那么应该只是选择洛杉矶的forward（否则路由探测结果将是莫斯科）, 因为ping
-		// 探测没有优先级，将选取最快回复的forward。
-
-		locs := []bvvd.Location{}
-		for _, e := range f.fs {
-			locs = append(locs, e.location)
-		}
-
-		coord := loc.Coord()
-		slices.SortFunc(locs, func(a, b bvvd.Location) int {
-			_, d1 := geodist.HaversineDistance(a.Coord(), coord)
-			_, d2 := geodist.HaversineDistance(b.Coord(), coord)
-			if d1 < d2 {
-				return -1
-			} else if d1 > d2 {
-				return 1
-			}
-			return 0
-		})
-
-		var fs []*Forward
-		for _, e := range f.fs {
-			if e.location == locs[0] && len(fs) <= 3 {
-				fs = append(fs, e)
-			}
-		}
-		return fs
-	}
+	return fs
 }
 
 func (f *Forwards) Add(faddr netip.AddrPort, loc bvvd.Location) error {
@@ -97,7 +51,7 @@ func (f *Forwards) Add(faddr netip.AddrPort, loc bvvd.Location) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if fw, has := f.fs[faddr]; has {
-		return errors.Errorf("forward faddr:%s location:%s existed", fw.addr.String(), fw.location.String())
+		return errors.Errorf("forward faddr:%s location:%s existed", fw.faddr.String(), fw.loc.String())
 	}
 
 	f.fs[faddr] = fw
@@ -105,12 +59,10 @@ func (f *Forwards) Add(faddr netip.AddrPort, loc bvvd.Location) error {
 }
 
 type Forward struct {
-	addr     netip.AddrPort
-	location bvvd.Location
+	faddr netip.AddrPort
+	loc   bvvd.Location
 
 	uplinkID atomic.Uint32 // gateway-->forward inc id
-
-	uplinkPL atomic.Uintptr // gateway-->forward pl
 
 	donwlinkPL *stats.PLStats // forward-->gateway pl
 }
@@ -123,14 +75,14 @@ func newForward(faddr netip.AddrPort, loc bvvd.Location) (*Forward, error) {
 	}
 
 	return &Forward{
-		addr:       faddr,
-		location:   loc,
+		faddr:      faddr,
+		loc:        loc,
 		donwlinkPL: stats.NewPLStats(bvvd.MaxID),
 	}, nil
 }
 
 func (f *Forward) Addr() netip.AddrPort {
-	return f.addr
+	return f.faddr
 }
 
 func (f *Forward) UplinkID() uint8 {
@@ -143,15 +95,4 @@ func (f *Forward) DownlinkID(id uint8) {
 
 func (f *Forward) DownlinkPL() stats.PL {
 	return stats.PL(f.donwlinkPL.PL(nodes.PLScale))
-}
-
-func (f *Forward) UplinkPL() stats.PL {
-	// todo: will cause PackLossGatewayUplink keep last value, when not data uplink transmit
-	tmp := f.uplinkPL.Load()
-	return *(*stats.PL)(unsafe.Pointer(&tmp))
-}
-
-func (f *Forward) SetUplinkPL(pl stats.PL) {
-	tmp := *(*uintptr)(unsafe.Pointer(&pl))
-	f.uplinkPL.Store(tmp)
 }

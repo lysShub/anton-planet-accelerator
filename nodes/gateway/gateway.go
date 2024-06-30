@@ -144,12 +144,17 @@ func (p *Gateway) uplinkService() (_ error) {
 		caddr, err := p.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
 		if err != nil {
 			return p.close(err)
-		} else if pkt.Data() == 0 {
+		} else if pkt.Data() < bvvd.Size {
 			continue
 		}
 		p.speed.Uplink(pkt.Data() + 20 + 8)
 
 		hdr := bvvd.Bvvd(pkt.Bytes())
+		hdr.SetClient(caddr)
+		if hdr.Kind() != bvvd.Data && pkt.Data() < msg.MinSize {
+			p.config.logger.Warn("too small", slog.Int("size", pkt.Data()), slog.String("client", caddr.String()), slog.String("kind", hdr.Kind().String()))
+			continue
+		}
 
 		switch kind := hdr.Kind(); kind {
 		case bvvd.PingGateway:
@@ -157,84 +162,48 @@ func (p *Gateway) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		case bvvd.PingForward:
-			hdr.SetClient(caddr)
+			var faddrs []netip.AddrPort
 			if hdr.Forward().Addr().IsUnspecified() {
-				// boardcast forward
-				var fs []*Forward
-				{
-					var msg msg.Message
-					if err := msg.Decode(pkt); err != nil {
-						p.config.logger.Warn(err.Error(), errorx.Trace(err))
-						continue
-					}
-					loc, ok := msg.Payload.(bvvd.Location)
-					if !ok {
-						p.config.logger.Warn("PingForward payload", slog.Any("payload", msg.Payload))
-						continue
-					}
-					msg.Encode(pkt.SetData(0))
-					fs = p.fs.GetByLocation(loc)
-				}
-
-				h, d := pkt.Head(), pkt.Data()
-				for _, f := range fs {
-					if err = p.sender.WriteToAddrPort(pkt.Sets(h, d), f.Addr()); err != nil {
-						return p.close(err)
-					}
-				}
+				faddrs = p.fs.Forwards() // boardcast
 			} else {
-				f, err := p.fs.GetByForward(hdr.Forward())
-				if err != nil {
-					p.config.logger.Warn(err.Error(), errorx.Trace(err))
-					continue
-				}
-
-				if err = p.sender.WriteToAddrPort(pkt, f.Addr()); err != nil {
+				faddrs = []netip.AddrPort{hdr.Forward()}
+			}
+			for _, faddr := range faddrs {
+				hdr.SetForward(faddr)
+				if err = p.conn.WriteToAddrPort(pkt, faddr); err != nil {
 					return p.close(err)
 				}
 			}
 		case bvvd.PackLossClientUplink:
-			var msg msg.Message
-			if err := msg.Decode(pkt); err != nil {
-				p.config.logger.Error(err.Error(), errorx.Trace(err))
-				continue
-			}
-			msg.Payload = p.cs.Client(caddr).UplinkPL()
-
-			if err := msg.Encode(pkt.SetData(0)); err != nil {
-				p.config.logger.Error(err.Error(), errorx.Trace(err))
-				continue
-			}
-
-			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
-				return p.close(err)
-			}
-		case bvvd.PackLossGatewayDownlink, bvvd.PackLossGatewayUplink:
-			f, err := p.fs.GetByForward(hdr.Forward())
-			if err != nil {
+			pl := p.cs.Client(caddr).UplinkPL()
+			if err := msg.Message(pkt.Bytes()).SetPayload(&pl); err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			}
 
-			var msg msg.Message
-			if err := msg.Decode(pkt); err != nil {
-				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
+			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
+				return p.close(err)
+			}
+		case bvvd.PackLossGatewayUplink:
+			if err := p.sender.WriteToAddrPort(pkt, hdr.Forward()); err != nil {
+				return p.close(err)
+			}
+		case bvvd.PackLossGatewayDownlink:
+			f, err := p.fs.Get(hdr.Forward())
+			if err != nil {
+				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			}
-			if kind == bvvd.PackLossGatewayDownlink {
-				msg.Payload = f.DownlinkPL()
-			} else {
-				msg.Payload = f.UplinkPL()
-			}
-			if err := msg.Encode(pkt.SetData(0)); err != nil {
-				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
+			pl := f.DownlinkPL()
+
+			if err := msg.Message(pkt.Bytes()).SetPayload(&pl); err != nil {
+				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			}
 
 			if err = p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
-
 		case bvvd.Data:
 			p.cs.Client(caddr).UplinkID(int(hdr.DataID()))
 			if debug.Debug() {
@@ -243,13 +212,12 @@ func (p *Gateway) uplinkService() (_ error) {
 				require.True(test.T(), ok)
 			}
 
-			f, err := p.fs.GetByForward(hdr.Forward())
+			f, err := p.fs.Get(hdr.Forward())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			}
 
-			hdr.SetClient(caddr)
 			hdr.SetDataID(f.UplinkID())
 			if debug.Debug() && rand.Int()%100 == 99 {
 				continue // PackLossGatewayUplink
@@ -257,23 +225,6 @@ func (p *Gateway) uplinkService() (_ error) {
 
 			if err = p.sender.WriteToAddrPort(pkt, f.Addr()); err != nil {
 				return p.close(err)
-			}
-
-			// todo: 请求到forward中去
-			// query gateway --> forward pack loss
-			if hdr.DataID() == 0xff {
-				var msg = msg.Message{MsgID: 1} // todo: 多个forward时还是要设置有效ID
-				msg.Kind = bvvd.PackLossGatewayUplink
-				msg.Forward = hdr.Forward()
-				msg.Client = hdr.Client()
-
-				if err := msg.Encode(pkt.SetData(0)); err != nil {
-					return p.close(err)
-				}
-
-				if err = p.sender.WriteToAddrPort(pkt, f.Addr()); err != nil {
-					return p.close(err)
-				}
 			}
 		default:
 			p.config.logger.Warn("unknown kind from client", slog.String("kind", kind.String()), slog.String("client", caddr.String()))
@@ -299,7 +250,7 @@ func (p *Gateway) donwlinkService() (_ error) {
 
 		switch kind := hdr.Kind(); kind {
 		case bvvd.Data:
-			f, err := p.fs.GetByForward(hdr.Forward())
+			f, err := p.fs.Get(hdr.Forward())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
@@ -316,22 +267,8 @@ func (p *Gateway) donwlinkService() (_ error) {
 				return p.close(err)
 			}
 		case bvvd.PackLossGatewayUplink:
-			f, err := p.fs.GetByForward(hdr.Forward())
-			if err != nil {
-				p.config.logger.Warn(err.Error(), errorx.Trace(err))
-				continue
-			}
-
-			var msg msg.Message
-			if err := msg.Decode(pkt); err != nil {
-				p.config.logger.Error(err.Error(), errorx.Trace(err))
-				continue
-			}
-
-			if pl, ok := msg.Payload.(stats.PL); ok {
-				f.SetUplinkPL(pl)
-			} else {
-				p.config.logger.Warn(fmt.Sprintf("unknown type %T", msg.Payload), errorx.Trace(nil))
+			if err = p.conn.WriteToAddrPort(pkt, hdr.Client()); err != nil {
+				return p.close(err)
 			}
 		case bvvd.PingForward:
 			if err = p.conn.WriteToAddrPort(pkt, hdr.Client()); err != nil {

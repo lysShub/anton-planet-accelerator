@@ -96,34 +96,21 @@ func (f *Forward) uplinkService() (err error) {
 		}
 
 		hdr := bvvd.Bvvd(pkt.Bytes())
+		hdr.SetForward(f.faddr)
+		if hdr.Kind() != bvvd.Data && pkt.Data() < msg.MinSize {
+			f.config.logger.Warn("too small", slog.Int("size", pkt.Data()), slog.String("gateway", gaddr.String()), slog.String("kind", hdr.Kind().String()))
+			continue
+		}
 
 		switch kind := hdr.Kind(); kind {
 		case bvvd.PingForward:
-			var msg msg.Message
-			if err := msg.Decode(pkt); err != nil {
-				f.config.logger.Error(err.Error(), errorx.Trace(err))
-				continue
-			}
-			msg.Forward = f.faddr
-			msg.Payload = f.loc
-			if err := msg.Encode(pkt.SetData(0)); err != nil {
-				f.config.logger.Error(err.Error(), errorx.Trace(err))
-				continue
-			}
-
 			if err := f.conn.WriteToAddrPort(pkt, gaddr); err != nil {
 				return f.close(err)
 			}
 		case bvvd.PackLossGatewayUplink:
-			var msg msg.Message
-			if err := msg.Decode(pkt); err != nil {
-				f.config.logger.Error(err.Error(), errorx.Trace(err))
-				continue
-			}
-			msg.Payload = f.ps.Gateway(gaddr).UplinkPL()
-			if err := msg.Encode(pkt.SetData(0)); err != nil {
-				f.config.logger.Error(err.Error(), errorx.Trace(err))
-				continue
+			pl := f.ps.Gateway(gaddr).UplinkPL()
+			if err := msg.Message(pkt.Bytes()).SetPayload(&pl); err != nil {
+				f.config.logger.Warn(err.Error(), errorx.Trace(err))
 			}
 
 			if err := f.conn.WriteToAddrPort(pkt, gaddr); err != nil {
@@ -142,7 +129,7 @@ func (f *Forward) uplinkService() (err error) {
 			// only get port, tcp/udp is same
 			ep := links.NewEP(hdr, header.TCP(pkt.Bytes()))
 
-			// read/create corresponding link, the link will self close by keepalive,
+			// read/create corresponding link, the link will self-close by keepalive,
 			// so if Send/Recv return net.ErrClosed error should ignore.
 			link, new, err := f.links.Link(ep, gaddr, f.faddr)
 			if err != nil {
@@ -153,9 +140,10 @@ func (f *Forward) uplinkService() (err error) {
 			}
 
 			if err = link.Send(pkt); err != nil {
-				if !errors.Is(err, net.ErrClosed) {
-					return f.close(err)
+				if errors.Is(err, net.ErrClosed) {
+					return nil
 				}
+				return f.close(err)
 			}
 		default:
 		}

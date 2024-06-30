@@ -12,11 +12,12 @@ import (
 func Test_Message(t *testing.T) {
 
 	var pkt = packet.Make()
-	var msg = Message{MsgID: rand.Uint32(), Payload: bvvd.Location(0)}
+	var loc = bvvd.Location(0)
+	var msg = Fields{MsgID: rand.Uint32(), Payload: &loc}
 	msg.Kind = bvvd.PingForward
 	require.NoError(t, msg.Encode(pkt))
 
-	var msg2 Message
+	var msg2 Fields
 
 	require.NoError(t, msg2.Decode(pkt))
 	require.Zero(t, pkt.Data())

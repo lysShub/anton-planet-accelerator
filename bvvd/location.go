@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/jftuga/geodist"
+	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
 )
 
@@ -43,6 +44,20 @@ func (l Location) Distance(coord geodist.Coord) float64 {
 
 func (l Location) Offset(p Location) float64 {
 	return l.Distance(p.Coord())
+}
+
+func (l Location) Encode(to *packet.Packet) error {
+	to.Append(byte(l))
+	return nil
+}
+
+func (l *Location) Decode(from *packet.Packet) error {
+	if from.Data() < 1 {
+		return errors.New("too small")
+	}
+
+	*l = Location(from.Detach(1)[0])
+	return l.Valid()
 }
 
 const (
