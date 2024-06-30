@@ -12,6 +12,7 @@ import (
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/checksum"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -19,7 +20,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/checksum"
+	stdsum "gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -129,7 +130,7 @@ func (l *Link) Recv(pkt *packet.Packet) error {
 }
 
 func (l *Link) Send(pkt *packet.Packet) error {
-	nodes.ChecksumForward(pkt, l.ep.proto, l.laddr)
+	checksum.ChecksumForward(pkt, l.ep.proto, l.laddr)
 	if debug.Debug() {
 		sum := header.PseudoHeaderChecksum(
 			tcpip.TransportProtocolNumber(l.ep.proto),
@@ -137,7 +138,7 @@ func (l *Link) Send(pkt *packet.Packet) error {
 			tcpip.AddrFrom4(netip.MustParseAddr(l.raw.RemoteAddr().String()).As4()),
 			uint16(pkt.Data()),
 		)
-		sum = checksum.Checksum(pkt.Bytes(), sum)
+		sum = stdsum.Checksum(pkt.Bytes(), sum)
 		require.Equal(test.T(), uint16(0xffff), sum)
 	}
 

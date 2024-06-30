@@ -13,6 +13,8 @@ import (
 	"github.com/lysShub/anton-planet-accelerator/conn"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/nodes/forward/links"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/checksum"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/msg"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -91,7 +93,7 @@ func (f *Forward) uplinkService() (err error) {
 
 		switch kind := hdr.Kind(); kind {
 		case bvvd.PingForward:
-			var msg nodes.Message
+			var msg msg.Message
 			if err := msg.Decode(pkt); err != nil {
 				f.config.logger.Error(err.Error(), errorx.Trace(err))
 				continue
@@ -107,7 +109,7 @@ func (f *Forward) uplinkService() (err error) {
 				return f.close(err)
 			}
 		case bvvd.PackLossGatewayUplink:
-			var msg nodes.Message
+			var msg msg.Message
 			if err := msg.Decode(pkt); err != nil {
 				f.config.logger.Error(err.Error(), errorx.Trace(err))
 				continue
@@ -127,7 +129,7 @@ func (f *Forward) uplinkService() (err error) {
 			// remove bvvd header
 			pkt = pkt.DetachN(bvvd.Size)
 			if debug.Debug() {
-				require.True(test.T(), nodes.ValidChecksum(pkt, hdr.Proto(), hdr.Server()))
+				require.True(test.T(), checksum.ValidChecksum(pkt, hdr.Proto(), hdr.Server()))
 				require.Equal(test.T(), f.forwardID, hdr.ForwardID())
 			}
 

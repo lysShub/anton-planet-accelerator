@@ -1,4 +1,4 @@
-package nodes
+package stats
 
 import (
 	"encoding/binary"
@@ -261,7 +261,7 @@ func (p *PL) Decode(from *packet.Packet) (err error) {
 	if from.Data() < 8 {
 		return errors.Errorf("too small %d", from.Data())
 	}
-	b := from.Detach(make([]byte, 8))
+	b := from.Detach(8)
 
 	v := binary.BigEndian.Uint64(b)
 	*p = *(*PL)(unsafe.Pointer(&v))

@@ -13,18 +13,20 @@ import (
 	"unsafe"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
-	"github.com/lysShub/anton-planet-accelerator/nodes"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/heap"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/msg"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/stats"
 	"github.com/lysShub/netkit/packet"
 )
 
 type messageManager struct {
 	id   atomic.Uint32
-	buff *nodes.Heap[nodes.Message]
+	buff *heap.Heap[msg.Message]
 }
 
 func newMessageManager() *messageManager {
 	var m = &messageManager{
-		buff: nodes.NewHeap[nodes.Message](16),
+		buff: heap.NewHeap[msg.Message](16),
 	}
 	m.id.Store(rand.Uint32())
 	return m
@@ -39,7 +41,7 @@ func (m *messageManager) ID() uint32 {
 }
 
 func (m *messageManager) Put(pkt *packet.Packet) error {
-	var msg = nodes.Message{}
+	var msg = msg.Message{}
 	if err := msg.Decode(pkt); err != nil {
 		return err
 	}
@@ -48,21 +50,21 @@ func (m *messageManager) Put(pkt *packet.Packet) error {
 	return nil
 }
 
-func (m *messageManager) PopByID(id uint32) nodes.Message {
-	return m.buff.PopBy(func(e nodes.Message) (pop bool) { return e.MsgID == id })
+func (m *messageManager) PopByID(id uint32) msg.Message {
+	return m.buff.PopBy(func(e msg.Message) (pop bool) { return e.MsgID == id })
 }
 
-func (m *messageManager) PopBy(fn func(nodes.Message) (pop bool), timeout time.Duration) (smg nodes.Message, ok bool) {
+func (m *messageManager) PopBy(fn func(msg.Message) (pop bool), timeout time.Duration) (smg msg.Message, ok bool) {
 	return m.buff.PopByDeadline(fn, time.Now().Add(timeout))
 }
 
 type NetworkStates struct {
 	PingGateway             time.Duration
 	PingForward             time.Duration
-	PackLossClientUplink    nodes.PL
-	PackLossClientDownlink  nodes.PL
-	PackLossGatewayUplink   nodes.PL
-	PackLossGatewayDownlink nodes.PL
+	PackLossClientUplink    stats.PL
+	PackLossClientDownlink  stats.PL
+	PackLossGatewayUplink   stats.PL
+	PackLossGatewayDownlink stats.PL
 }
 
 func (n *NetworkStates) String() string {

@@ -1,16 +1,16 @@
-package nodes_test
+package heap_test
 
 import (
 	"testing"
 	"time"
 
-	"github.com/lysShub/anton-planet-accelerator/nodes"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/heap"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_Heap(t *testing.T) {
 	t.Run("put pop", func(t *testing.T) {
-		h := nodes.NewHeap[int](4)
+		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3, 4}
 		for _, e := range vals {
@@ -25,7 +25,7 @@ func Test_Heap(t *testing.T) {
 	})
 
 	t.Run("put full block", func(t *testing.T) {
-		h := nodes.NewHeap[int](4)
+		h := heap.NewHeap[int](4)
 
 		s := time.Now()
 		go func() {
@@ -50,7 +50,7 @@ func Test_Heap(t *testing.T) {
 	})
 
 	t.Run("pop empty block", func(t *testing.T) {
-		h := nodes.NewHeap[int](4)
+		h := heap.NewHeap[int](4)
 
 		s := time.Now()
 		go func() {
@@ -64,7 +64,7 @@ func Test_Heap(t *testing.T) {
 	})
 
 	t.Run("MustPut", func(t *testing.T) {
-		h := nodes.NewHeap[int](4)
+		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3, 4, 5, 6, 7}
 		for _, e := range vals {
@@ -79,7 +79,7 @@ func Test_Heap(t *testing.T) {
 	})
 
 	t.Run("range", func(t *testing.T) {
-		h := nodes.NewHeap[int](4)
+		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3, 4, 5, 6, 7}
 		for _, e := range vals {
@@ -100,7 +100,7 @@ func Test_Heap(t *testing.T) {
 	})
 
 	t.Run("PopBy", func(t *testing.T) {
-		h := nodes.NewHeap[int](4)
+		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3, 4, 5, 6, 7}
 		for _, e := range vals {
@@ -122,7 +122,7 @@ func Test_Heap(t *testing.T) {
 	})
 
 	t.Run("PopBy 2", func(t *testing.T) {
-		h := nodes.NewHeap[int](4)
+		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3, 4, 5, 6, 7}
 		for _, e := range vals {
@@ -144,7 +144,7 @@ func Test_Heap(t *testing.T) {
 	})
 
 	t.Run("PopBy block", func(t *testing.T) {
-		h := nodes.NewHeap[int](4)
+		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3}
 		for _, e := range vals {
@@ -168,7 +168,7 @@ func Test_Heap(t *testing.T) {
 	})
 
 	t.Run("PopByDeadline not dead", func(t *testing.T) {
-		h := nodes.NewHeap[int](4)
+		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3}
 		for _, e := range vals {
@@ -193,7 +193,7 @@ func Test_Heap(t *testing.T) {
 	})
 
 	t.Run("PopByDeadline dead", func(t *testing.T) {
-		h := nodes.NewHeap[int](4)
+		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3}
 		for _, e := range vals {
@@ -218,7 +218,7 @@ func Test_Heap(t *testing.T) {
 	})
 
 	t.Run("PopByDeadline expire", func(t *testing.T) {
-		h := nodes.NewHeap[int](4)
+		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3}
 		for _, e := range vals {

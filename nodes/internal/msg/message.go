@@ -1,4 +1,4 @@
-package nodes
+package msg
 
 import (
 	"encoding/binary"
@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/stats"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/rawsock/test"
@@ -51,7 +52,7 @@ func (m *Message) Encode(to *packet.Packet) (err error) {
 	if m.Payload != nil {
 		switch m.Kind {
 		case bvvd.PackLossClientUplink, bvvd.PackLossGatewayUplink, bvvd.PackLossGatewayDownlink:
-			pl, ok := m.Payload.(PL)
+			pl, ok := m.Payload.(stats.PL)
 			if !ok {
 				return errors.Errorf("invalid data type %T", m.Payload)
 			}
@@ -87,7 +88,7 @@ func (m *Message) Decode(from *packet.Packet) error {
 	if from.Data() < 4 {
 		return errors.Errorf("too small %d", from.Data())
 	}
-	m.MsgID = binary.BigEndian.Uint32(from.Detach(make([]byte, 4)))
+	m.MsgID = binary.BigEndian.Uint32(from.Detach(4))
 	if m.MsgID == 0 {
 		return errors.Errorf("invalid message id")
 	}
@@ -96,13 +97,13 @@ func (m *Message) Decode(from *packet.Packet) error {
 	case bvvd.PingGateway:
 	case bvvd.PingForward:
 		if from.Data() > 0 {
-			m.Payload = bvvd.Location(from.Detach(make([]byte, 1))[0])
+			m.Payload = bvvd.Location(from.Detach(1)[0])
 		} else if !m.ForwardID.Vaid() {
 			return errors.Errorf("PingForward message require ForwardID or Payload")
 		}
 	case bvvd.PackLossGatewayUplink, bvvd.PackLossClientUplink, bvvd.PackLossGatewayDownlink:
 		if from.Data() > 0 {
-			var pl PL
+			var pl stats.PL
 			if err := pl.Decode(from); err != nil {
 				return err
 			}

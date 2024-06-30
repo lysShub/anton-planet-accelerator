@@ -19,6 +19,9 @@ import (
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/nodes/client/game"
 	"github.com/lysShub/anton-planet-accelerator/nodes/client/inject"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/checksum"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/msg"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/stats"
 	"github.com/lysShub/fatun"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
@@ -38,7 +41,7 @@ type Client struct {
 
 	conn       conn.Conn
 	uplinkId   atomic.Uint32
-	downlinkPL *nodes.PLStats
+	downlinkPL *stats.PLStats
 
 	route *route
 	trunk *trunkRouteRecorder
@@ -53,7 +56,7 @@ type Client struct {
 func New(config *Config) (*Client, error) {
 	var c = &Client{
 		config:     config.init(),
-		downlinkPL: nodes.NewPLStats(bvvd.MaxID),
+		downlinkPL: stats.NewPLStats(bvvd.MaxID),
 		route:      newRoute(config.FixRoute),
 		msgMgr:     newMessageManager(),
 	}
@@ -137,12 +140,12 @@ func (c *Client) start() error {
 func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (gaddr netip.AddrPort, forward bvvd.ForwardID, err error) {
 	var msgIds []uint32
 
-	var msg = nodes.Message{}
-	msg.Kind = bvvd.PingForward
-	msg.ForwardID = 0
-	msg.Payload = loc
+	var m = msg.Message{}
+	m.Kind = bvvd.PingForward
+	m.ForwardID = 0
+	m.Payload = loc
 	for _, gaddr := range c.config.Gateways {
-		id, err := c.messageRequest(gaddr, msg)
+		id, err := c.messageRequest(gaddr, m)
 		if err != nil {
 			return netip.AddrPort{}, 0, err
 		}
@@ -150,7 +153,7 @@ func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (gaddr net
 	}
 
 	var idx int
-	m, ok := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
+	m, ok := c.msgMgr.PopBy(func(m msg.Message) (pop bool) {
 		idx = slices.Index(msgIds, m.MsgID)
 		return idx >= 0
 	}, timeout)
@@ -165,7 +168,7 @@ func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (gaddr net
 	return c.config.Gateways[idx], m.ForwardID, nil
 }
 
-func (c *Client) messageRequest(gaddr netip.AddrPort, msg nodes.Message) (msgId uint32, err error) {
+func (c *Client) messageRequest(gaddr netip.AddrPort, msg msg.Message) (msgId uint32, err error) {
 	var pkt = packet.Make(64 + bvvd.Size)
 
 	msg.MsgID = c.msgMgr.ID()
@@ -179,7 +182,7 @@ func (c *Client) messageRequest(gaddr netip.AddrPort, msg nodes.Message) (msgId 
 	return msg.MsgID, nil
 }
 
-func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err error) {
+func (c *Client) NetworkStats(timeout time.Duration) (s *NetworkStates, err error) {
 	var (
 		start = time.Now()
 		kinds = []bvvd.Kind{
@@ -191,20 +194,20 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 	gaddr, fid, _ := c.trunk.Trunk()
 
 	var ids []uint32
-	msg := nodes.Message{}
-	msg.ForwardID = fid
+	m := msg.Message{}
+	m.ForwardID = fid
 	for _, kind := range kinds {
-		msg.Kind = kind
-		id, err := c.messageRequest(gaddr, msg)
+		m.Kind = kind
+		id, err := c.messageRequest(gaddr, m)
 		if err != nil {
 			return nil, c.close(err)
 		}
 		ids = append(ids, id)
 	}
 
-	stats = &NetworkStates{}
+	s = &NetworkStates{}
 	for i := 0; i < len(kinds); i++ {
-		msg, ok := c.msgMgr.PopBy(func(m nodes.Message) (pop bool) {
+		msg, ok := c.msgMgr.PopBy(func(m msg.Message) (pop bool) {
 			return slices.Contains(ids, m.MsgID)
 		}, time.Second*3)
 		if !ok {
@@ -213,24 +216,24 @@ func (c *Client) NetworkStats(timeout time.Duration) (stats *NetworkStates, err 
 		}
 		switch msg.Kind {
 		case bvvd.PingGateway:
-			stats.PingGateway = time.Since(start)
+			s.PingGateway = time.Since(start)
 		case bvvd.PingForward:
-			stats.PingForward = time.Since(start)
+			s.PingForward = time.Since(start)
 		case bvvd.PackLossClientUplink:
-			stats.PackLossClientUplink = msg.Payload.(nodes.PL)
+			s.PackLossClientUplink = msg.Payload.(stats.PL)
 		case bvvd.PackLossGatewayUplink:
-			stats.PackLossGatewayUplink = msg.Payload.(nodes.PL)
+			s.PackLossGatewayUplink = msg.Payload.(stats.PL)
 		case bvvd.PackLossGatewayDownlink:
-			stats.PackLossGatewayDownlink = msg.Payload.(nodes.PL)
+			s.PackLossGatewayDownlink = msg.Payload.(stats.PL)
 		default:
 		}
 	}
 
-	stats.PackLossClientDownlink = nodes.PL(c.downlinkPL.PL(nodes.PLScale))
-	if stats.PackLossClientDownlink == 0 {
-		stats.PackLossClientDownlink = math.SmallestNonzeroFloat64
+	s.PackLossClientDownlink = stats.PL(c.downlinkPL.PL(nodes.PLScale))
+	if s.PackLossClientDownlink == 0 {
+		s.PackLossClientDownlink = math.SmallestNonzeroFloat64
 	}
-	return stats, err
+	return s, err
 }
 
 func (c *Client) RouteProbe(saddr netip.Addr) (gaddr netip.AddrPort, fid bvvd.ForwardID, err error) {
@@ -282,7 +285,7 @@ func (c *Client) uplinkService() (_ error) {
 			pkt.SetHead(head1)
 		}
 
-		nodes.ChecksumClient(pkt, info.Proto, info.Server)
+		checksum.ChecksumClient(pkt, info.Proto, info.Server)
 		hdr.Proto = info.Proto
 		hdr.Server = info.Server
 		hdr.DataID = uint8(c.uplinkId.Add(1))
@@ -351,7 +354,7 @@ func (c *Client) downlinkServic() (_ error) {
 			SrcAddr:     tcpip.AddrFrom4(hdr.Server().As4()),
 			DstAddr:     laddr,
 		})
-		nodes.Rechecksum(ip)
+		checksum.Rechecksum(ip)
 
 		if c.pcap != nil {
 			c.pcap.WriteIP(ip)

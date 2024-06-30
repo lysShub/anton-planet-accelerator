@@ -14,6 +14,10 @@ import (
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/conn"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/checksum"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/heap"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/msg"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/stats"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -32,8 +36,8 @@ type Gateway struct {
 	sender conn.Conn
 	fs     *Forwards
 
-	msgbuff *nodes.Heap[nodes.Message]
-	speed   *nodes.LinkSpeed
+	msgbuff *heap.Heap[msg.Message]
+	speed   *stats.LinkSpeed
 
 	closeErr errorx.CloseErr
 }
@@ -43,8 +47,8 @@ func New(addr string, config *Config) (*Gateway, error) {
 		config:  config.init(),
 		cs:      NewClients(),
 		fs:      NewForwards(),
-		msgbuff: nodes.NewHeap[nodes.Message](4),
-		speed:   nodes.NewLinkSpeed(time.Second),
+		msgbuff: heap.NewHeap[msg.Message](4),
+		speed:   stats.NewLinkSpeed(time.Second),
 	}
 
 	err := nodes.DisableOffload(config.logger)
@@ -104,28 +108,28 @@ func (p *Gateway) AddForward(faddr netip.AddrPort) error {
 
 	// get forward locatinon by PingForward
 	var pkt = packet.Make()
-	var msg = nodes.Message{MsgID: rand.Uint32(), Payload: bvvd.Location(0)}
-	msg.Kind = bvvd.PingForward
-	if err := msg.Encode(pkt); err != nil {
+	var m = msg.Message{MsgID: rand.Uint32(), Payload: bvvd.Location(0)}
+	m.Kind = bvvd.PingForward
+	if err := m.Encode(pkt); err != nil {
 		return err
 	}
 	if err := p.sender.WriteToAddrPort(pkt, faddr); err != nil {
 		return err
 	}
 
-	msg, ok := p.msgbuff.PopByDeadline(
-		func(e nodes.Message) (pop bool) { return e.MsgID == msg.MsgID },
+	m, ok := p.msgbuff.PopByDeadline(
+		func(e msg.Message) (pop bool) { return e.MsgID == m.MsgID },
 		time.Now().Add(time.Second*3),
 	)
 	if !ok {
 		return errors.Errorf("add forward %s timeout", faddr.String())
 	}
-	loc, ok := msg.Payload.(bvvd.Location)
+	loc, ok := m.Payload.(bvvd.Location)
 	if !ok {
-		return errors.Errorf("ping forward message payload %#v", msg.Payload)
+		return errors.Errorf("ping forward message payload %#v", m.Payload)
 	}
 
-	if err := p.fs.Add(loc, msg.ForwardID, faddr); err != nil {
+	if err := p.fs.Add(loc, m.ForwardID, faddr); err != nil {
 		return err
 	}
 	p.config.logger.Info("add forward success", slog.String("forward", faddr.String()), slog.String("LocID", loc.String()))
@@ -183,7 +187,7 @@ func (p *Gateway) uplinkService() (_ error) {
 				// boardcast forward
 				var fs []*Forward
 				{
-					var msg nodes.Message
+					var msg msg.Message
 					if err := msg.Decode(pkt); err != nil {
 						p.config.logger.Warn(err.Error(), errorx.Trace(err))
 						continue
@@ -215,7 +219,7 @@ func (p *Gateway) uplinkService() (_ error) {
 				}
 			}
 		case bvvd.PackLossClientUplink:
-			var msg nodes.Message
+			var msg msg.Message
 			if err := msg.Decode(pkt); err != nil {
 				p.config.logger.Error(err.Error(), errorx.Trace(err))
 				continue
@@ -237,7 +241,7 @@ func (p *Gateway) uplinkService() (_ error) {
 				continue
 			}
 
-			var msg nodes.Message
+			var msg msg.Message
 			if err := msg.Decode(pkt); err != nil {
 				p.config.logger.Warn("can't get forward", errorx.Trace(nil))
 				continue
@@ -259,7 +263,7 @@ func (p *Gateway) uplinkService() (_ error) {
 		case bvvd.Data:
 			p.cs.Client(caddr).UplinkID(int(hdr.DataID()))
 			if debug.Debug() {
-				ok := nodes.ValidChecksum(pkt.DetachN(bvvd.Size), hdr.Proto(), hdr.Server())
+				ok := checksum.ValidChecksum(pkt.DetachN(bvvd.Size), hdr.Proto(), hdr.Server())
 				pkt.AttachN(bvvd.Size)
 				require.True(test.T(), ok)
 			}
@@ -282,7 +286,7 @@ func (p *Gateway) uplinkService() (_ error) {
 
 			// query gateway --> forward pack loss
 			if hdr.DataID() == 0xff {
-				var msg = nodes.Message{MsgID: 1} // todo: 多个forward时还是要设置有效ID
+				var msg = msg.Message{MsgID: 1} // todo: 多个forward时还是要设置有效ID
 				msg.Kind = bvvd.PackLossGatewayUplink
 				msg.ForwardID = hdr.ForwardID()
 				msg.Client = hdr.Client()
@@ -342,13 +346,13 @@ func (p *Gateway) donwlinkService() (_ error) {
 				continue
 			}
 
-			var msg nodes.Message
+			var msg msg.Message
 			if err := msg.Decode(pkt); err != nil {
 				p.config.logger.Error(err.Error(), errorx.Trace(err))
 				continue
 			}
 
-			if pl, ok := msg.Payload.(nodes.PL); ok {
+			if pl, ok := msg.Payload.(stats.PL); ok {
 				f.SetUplinkPL(pl)
 			} else {
 				p.config.logger.Warn(fmt.Sprintf("unknown type %T", msg.Payload), errorx.Trace(nil))
@@ -356,7 +360,7 @@ func (p *Gateway) donwlinkService() (_ error) {
 		case bvvd.PingForward:
 			if hdr.Client().Addr().IsUnspecified() {
 				// is gateway PingForard, without set Client
-				var msg nodes.Message
+				var msg msg.Message
 				if err := msg.Decode(pkt); err != nil {
 					p.config.logger.Warn(err.Error(), errorx.Trace(nil))
 					continue

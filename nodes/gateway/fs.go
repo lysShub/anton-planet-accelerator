@@ -10,6 +10,7 @@ import (
 	"github.com/jftuga/geodist"
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/stats"
 	"github.com/pkg/errors"
 )
 
@@ -112,7 +113,7 @@ type Forward struct {
 
 	uplinkPL atomic.Uintptr // gateway-->forward pl
 
-	donwlinkPL *nodes.PLStats // forward-->gateway pl
+	donwlinkPL *stats.PLStats // forward-->gateway pl
 }
 
 func newForward(loc bvvd.Location, id bvvd.ForwardID, faddr netip.AddrPort) (*Forward, error) {
@@ -128,7 +129,7 @@ func newForward(loc bvvd.Location, id bvvd.ForwardID, faddr netip.AddrPort) (*Fo
 		addr:       faddr,
 		id:         id,
 		location:   loc,
-		donwlinkPL: nodes.NewPLStats(bvvd.MaxID),
+		donwlinkPL: stats.NewPLStats(bvvd.MaxID),
 	}, nil
 }
 
@@ -144,17 +145,17 @@ func (f *Forward) DownlinkID(id uint8) {
 	f.donwlinkPL.ID(int(id))
 }
 
-func (f *Forward) DownlinkPL() nodes.PL {
-	return nodes.PL(f.donwlinkPL.PL(nodes.PLScale))
+func (f *Forward) DownlinkPL() stats.PL {
+	return stats.PL(f.donwlinkPL.PL(nodes.PLScale))
 }
 
-func (f *Forward) UplinkPL() nodes.PL {
+func (f *Forward) UplinkPL() stats.PL {
 	// todo: will cause PackLossGatewayUplink keep last value, when not data uplink transmit
 	tmp := f.uplinkPL.Load()
-	return *(*nodes.PL)(unsafe.Pointer(&tmp))
+	return *(*stats.PL)(unsafe.Pointer(&tmp))
 }
 
-func (f *Forward) SetUplinkPL(pl nodes.PL) {
+func (f *Forward) SetUplinkPL(pl stats.PL) {
 	tmp := *(*uintptr)(unsafe.Pointer(&pl))
 	f.uplinkPL.Store(tmp)
 }

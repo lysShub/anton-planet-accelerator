@@ -1,4 +1,4 @@
-package nodes
+package heap
 
 import (
 	"sync"

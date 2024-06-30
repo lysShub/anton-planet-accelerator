@@ -7,7 +7,7 @@ require (
 	github.com/jftuga/geodist v1.0.0
 	github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61
 	github.com/lysShub/fatun v0.0.0-20240601183817-825fbf1e595e
-	github.com/lysShub/netkit v0.0.0-20240615105257-9071e92058eb
+	github.com/lysShub/netkit v0.0.0-20240630051200-8be9ae015bcd
 	github.com/lysShub/rawsock v0.0.0-20240601184254-6561883771fe
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.9.0

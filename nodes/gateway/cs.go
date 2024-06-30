@@ -8,6 +8,7 @@ import (
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/stats"
 )
 
 type Clients struct {
@@ -28,7 +29,7 @@ func (cs *Clients) Client(client netip.AddrPort) *Client {
 	cs.mu.RUnlock()
 
 	if c == nil {
-		c = &Client{uplinkPL: nodes.NewPLStats(bvvd.MaxID)}
+		c = &Client{uplinkPL: stats.NewPLStats(bvvd.MaxID)}
 
 		cs.mu.Lock()
 		cs.cs[client] = c
@@ -53,7 +54,7 @@ func (cs *Clients) keepalive() {
 type Client struct {
 	alive atomic.Uint32
 
-	uplinkPL   *nodes.PLStats // uplink pl statistics
+	uplinkPL   *stats.PLStats // uplink pl statistics
 	downlinkID atomic.Uint32  // downlink inc id
 }
 
@@ -62,8 +63,8 @@ func (c *Client) UplinkID(id int) {
 	c.alive.Add(1)
 }
 
-func (c *Client) UplinkPL() nodes.PL {
-	return nodes.PL(c.uplinkPL.PL(nodes.PLScale))
+func (c *Client) UplinkPL() stats.PL {
+	return stats.PL(c.uplinkPL.PL(nodes.PLScale))
 }
 
 func (c *Client) DownlinkID() uint8 {

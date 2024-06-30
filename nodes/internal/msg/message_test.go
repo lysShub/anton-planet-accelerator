@@ -1,4 +1,4 @@
-package nodes
+package msg
 
 import (
 	"math/rand"

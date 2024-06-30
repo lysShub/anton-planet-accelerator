@@ -1,4 +1,4 @@
-package nodes_test
+package checksum_test
 
 import (
 	"math/rand"
@@ -6,7 +6,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/lysShub/anton-planet-accelerator/nodes"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/checksum"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/rawsock/test"
 	"github.com/stretchr/testify/require"
@@ -34,12 +34,12 @@ func Test_Checksum(t *testing.T) {
 		WindowSize: uint16(rand.Uint32()),
 	})
 
-	nodes.ChecksumClient(pkt, syscall.IPPROTO_TCP, server.Addr())
+	checksum.ChecksumClient(pkt, syscall.IPPROTO_TCP, server.Addr())
 
-	ok := nodes.ValidChecksum(pkt, 17, server.Addr())
+	ok := checksum.ValidChecksum(pkt, 17, server.Addr())
 	require.True(t, ok)
 
-	nodes.ChecksumForward(pkt, syscall.IPPROTO_TCP, local)
+	checksum.ChecksumForward(pkt, syscall.IPPROTO_TCP, local)
 
 	test.ValidTCP(t, pkt.Bytes(), header.PseudoHeaderChecksum(
 		header.TCPProtocolNumber,
