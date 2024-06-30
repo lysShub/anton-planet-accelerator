@@ -66,7 +66,7 @@ func (m *Message) Decode(from *packet.Packet) error {
 	}
 	m.MsgID = binary.BigEndian.Uint32(from.Detach(4))
 	if m.MsgID == 0 {
-		return errors.Errorf("invalid message id")
+		return errors.New("invalid message id")
 	}
 
 	switch m.Kind {
@@ -74,8 +74,8 @@ func (m *Message) Decode(from *packet.Packet) error {
 	case bvvd.PingForward:
 		if from.Data() > 0 {
 			m.Payload = bvvd.Location(from.Detach(1)[0])
-		} else if err := m.ForwardID.Valid(); err != nil {
-			return err
+		} else if !m.Forward.IsValid() {
+			return errors.New("invalid forward")
 		}
 	case bvvd.PackLossGatewayUplink, bvvd.PackLossClientUplink, bvvd.PackLossGatewayDownlink:
 		if from.Data() > 0 {

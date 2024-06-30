@@ -34,8 +34,6 @@ func main() {
 	t := test.T()
 
 	config := &forward.Config{
-		Location:        loc,
-		ForwardID:       1,
 		MaxRecvBuffSize: 2048,
 	}
 

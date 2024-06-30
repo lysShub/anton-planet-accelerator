@@ -39,19 +39,19 @@ type Link struct {
 	closeErr errorx.CloseErr
 }
 
-func newLink(links *Links, link Endpoint, gaddr netip.AddrPort, forwardID bvvd.ForwardID) (*Link, error) {
+func newLink(links *Links, link Endpoint, gaddr, faddr netip.AddrPort) (*Link, error) {
 	var (
 		l = &Link{
 			links: links,
 			ep:    link,
 			gaddr: gaddr,
 			header: bvvd.Fields{
-				Kind:      bvvd.Data,
-				Proto:     link.proto,
-				DataID:    0, // set by forward
-				ForwardID: forwardID,
-				Client:    link.client,
-				Server:    link.server.Addr(),
+				Kind:    bvvd.Data,
+				Proto:   link.proto,
+				DataID:  0, // set by forward
+				Forward: faddr,
+				Client:  link.client,
+				Server:  link.server.Addr(),
 			},
 		}
 		err error
@@ -130,7 +130,7 @@ func (l *Link) Recv(pkt *packet.Packet) error {
 }
 
 func (l *Link) Send(pkt *packet.Packet) error {
-	checksum.ChecksumForward(pkt, l.ep.proto, l.laddr)
+	checksum.ChecksumForward(pkt, uint8(l.ep.proto), l.laddr)
 	if debug.Debug() {
 		sum := header.PseudoHeaderChecksum(
 			tcpip.TransportProtocolNumber(l.ep.proto),

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -21,13 +22,13 @@ func NewLinks() *Links {
 	return &Links{links: map[Endpoint]*Link{}}
 }
 
-func (ls *Links) Link(ep Endpoint, gaddr netip.AddrPort, forwardID bvvd.ForwardID) (l *Link, new bool, err error) {
+func (ls *Links) Link(ep Endpoint, gaddr, faddr netip.AddrPort) (l *Link, new bool, err error) {
 	ls.mu.RLock()
 	l = ls.links[ep]
 	ls.mu.RUnlock()
 
 	if l == nil {
-		l, err = newLink(ls, ep, gaddr, forwardID)
+		l, err = newLink(ls, ep, gaddr, faddr)
 		if err != nil {
 			return nil, false, err
 		}
@@ -58,7 +59,7 @@ func (ls *Links) Close() error {
 
 type Endpoint struct {
 	client      netip.AddrPort
-	proto       uint8
+	proto       tcpip.TransportProtocolNumber
 	processPort uint16
 	server      netip.AddrPort
 }

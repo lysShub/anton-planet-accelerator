@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes/forward"
 	"github.com/lysShub/netkit/debug"
 	"github.com/stretchr/testify/require"
@@ -17,7 +16,6 @@ func TestXxxx(t *testing.T) {
 	fmt.Println(debug.Debug())
 
 	config := &forward.Config{
-		Location:        bvvd.Moscow,
 		MaxRecvBuffSize: 1536,
 	}
 

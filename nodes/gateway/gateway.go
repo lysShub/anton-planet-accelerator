@@ -99,12 +99,12 @@ func (p *Gateway) Serve() (err error) {
 	return p.close(p.uplinkService())
 }
 
-func (p *Gateway) AddForward(faddr netip.AddrPort, fid bvvd.ForwardID, loc bvvd.Location) error {
+func (p *Gateway) AddForward(faddr netip.AddrPort, loc bvvd.Location) error {
 	if !p.start.Load() {
 		return errors.Errorf("gateway not start")
 	}
 
-	if err := p.fs.Add(faddr, fid, loc); err != nil {
+	if err := p.fs.Add(faddr, loc); err != nil {
 		return err
 	}
 	p.config.logger.Info("add forward", slog.String("forward", faddr.String()), slog.String("LocID", loc.String()))
@@ -158,7 +158,7 @@ func (p *Gateway) uplinkService() (_ error) {
 			}
 		case bvvd.PingForward:
 			hdr.SetClient(caddr)
-			if hdr.ForwardID().Valid() == nil {
+			if hdr.Forward().Addr().IsUnspecified() {
 				// boardcast forward
 				var fs []*Forward
 				{
@@ -183,7 +183,7 @@ func (p *Gateway) uplinkService() (_ error) {
 					}
 				}
 			} else {
-				f, err := p.fs.GetByForward(hdr.ForwardID())
+				f, err := p.fs.GetByForward(hdr.Forward())
 				if err != nil {
 					p.config.logger.Warn(err.Error(), errorx.Trace(err))
 					continue
@@ -210,7 +210,7 @@ func (p *Gateway) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		case bvvd.PackLossGatewayDownlink, bvvd.PackLossGatewayUplink:
-			f, err := p.fs.GetByForward(hdr.ForwardID())
+			f, err := p.fs.GetByForward(hdr.Forward())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
@@ -238,12 +238,12 @@ func (p *Gateway) uplinkService() (_ error) {
 		case bvvd.Data:
 			p.cs.Client(caddr).UplinkID(int(hdr.DataID()))
 			if debug.Debug() {
-				ok := checksum.ValidChecksum(pkt.DetachN(bvvd.Size), hdr.Proto(), hdr.Server())
+				ok := checksum.ValidChecksum(pkt.DetachN(bvvd.Size), uint8(hdr.Proto()), hdr.Server())
 				pkt.AttachN(bvvd.Size)
 				require.True(test.T(), ok)
 			}
 
-			f, err := p.fs.GetByForward(hdr.ForwardID())
+			f, err := p.fs.GetByForward(hdr.Forward())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
@@ -259,11 +259,12 @@ func (p *Gateway) uplinkService() (_ error) {
 				return p.close(err)
 			}
 
+			// todo: 请求到forward中去
 			// query gateway --> forward pack loss
 			if hdr.DataID() == 0xff {
 				var msg = msg.Message{MsgID: 1} // todo: 多个forward时还是要设置有效ID
 				msg.Kind = bvvd.PackLossGatewayUplink
-				msg.ForwardID = hdr.ForwardID()
+				msg.Forward = hdr.Forward()
 				msg.Client = hdr.Client()
 
 				if err := msg.Encode(pkt.SetData(0)); err != nil {
@@ -298,7 +299,7 @@ func (p *Gateway) donwlinkService() (_ error) {
 
 		switch kind := hdr.Kind(); kind {
 		case bvvd.Data:
-			f, err := p.fs.GetByForward(hdr.ForwardID())
+			f, err := p.fs.GetByForward(hdr.Forward())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
@@ -315,7 +316,7 @@ func (p *Gateway) donwlinkService() (_ error) {
 				return p.close(err)
 			}
 		case bvvd.PackLossGatewayUplink:
-			f, err := p.fs.GetByForward(hdr.ForwardID())
+			f, err := p.fs.GetByForward(hdr.Forward())
 			if err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue

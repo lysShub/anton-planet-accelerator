@@ -16,21 +16,21 @@ import (
 
 type Forwards struct {
 	mu sync.RWMutex
-	fs map[bvvd.ForwardID]*Forward
+	fs map[netip.AddrPort]*Forward // faddr
 }
 
 func NewForwards() *Forwards {
 	return &Forwards{
-		fs: map[bvvd.ForwardID]*Forward{},
+		fs: map[netip.AddrPort]*Forward{},
 	}
 }
 
-func (f *Forwards) GetByForward(fid bvvd.ForwardID) (*Forward, error) {
+func (f *Forwards) GetByForward(faddr netip.AddrPort) (*Forward, error) {
 	f.mu.RLock()
-	fw, has := f.fs[fid]
+	fw, has := f.fs[faddr]
 	f.mu.RUnlock()
 	if !has {
-		return nil, errors.Errorf("not forward %d record", fid)
+		return nil, errors.Errorf("not forward %s record", faddr.String())
 	}
 	return fw, nil
 }
@@ -88,25 +88,24 @@ func (f *Forwards) GetByLocation(loc bvvd.Location) []*Forward {
 	}
 }
 
-func (f *Forwards) Add(faddr netip.AddrPort, id bvvd.ForwardID, loc bvvd.Location) error {
-	fw, err := newForward(faddr, id, loc)
+func (f *Forwards) Add(faddr netip.AddrPort, loc bvvd.Location) error {
+	fw, err := newForward(faddr, loc)
 	if err != nil {
 		return err
 	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if fw, has := f.fs[id]; has {
-		return errors.Errorf("forward id:%d addr:%s location:%s existed", id, fw.addr.String(), fw.location.String())
+	if fw, has := f.fs[faddr]; has {
+		return errors.Errorf("forward faddr:%s location:%s existed", fw.addr.String(), fw.location.String())
 	}
 
-	f.fs[id] = fw
+	f.fs[faddr] = fw
 	return nil
 }
 
 type Forward struct {
 	addr     netip.AddrPort
-	id       bvvd.ForwardID
 	location bvvd.Location
 
 	uplinkID atomic.Uint32 // gateway-->forward inc id
@@ -116,10 +115,8 @@ type Forward struct {
 	donwlinkPL *stats.PLStats // forward-->gateway pl
 }
 
-func newForward(faddr netip.AddrPort, id bvvd.ForwardID, loc bvvd.Location) (*Forward, error) {
+func newForward(faddr netip.AddrPort, loc bvvd.Location) (*Forward, error) {
 	if err := loc.Valid(); err != nil {
-		return nil, err
-	} else if err := id.Valid(); err != nil {
 		return nil, err
 	} else if !faddr.IsValid() {
 		return nil, errors.Errorf("invalid forward address %s", faddr.String())
@@ -127,7 +124,6 @@ func newForward(faddr netip.AddrPort, id bvvd.ForwardID, loc bvvd.Location) (*Fo
 
 	return &Forward{
 		addr:       faddr,
-		id:         id,
 		location:   loc,
 		donwlinkPL: stats.NewPLStats(bvvd.MaxID),
 	}, nil

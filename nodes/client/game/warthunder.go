@@ -111,7 +111,7 @@ func (w *warthunder) Capture(pkt *packet.Packet) (Info, error) {
 
 		pkt.DetachN(int(hdr.HeaderLength()))
 		return Info{
-			Proto:    hdr.Protocol(),
+			Proto:    hdr.TransportProtocol(),
 			Server:   netip.AddrFrom4(hdr.DestinationAddress().As4()),
 			PlayData: playData,
 		}, nil

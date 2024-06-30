@@ -114,21 +114,21 @@ func (c *Client) start() error {
 	go c.downlinkServic()
 
 	var start = time.Now()
-	gaddr, fid, err := c.routeProbe(c.config.Location, time.Second*3)
+	gaddr, faddr, err := c.routeProbe(c.config.Location, time.Second*3)
 	if err != nil {
 		c.config.logger.Error(err.Error(), errorx.Trace(err))
 		return err
 	}
 
-	c.trunk = newTrunkRouteRecorder(time.Second*3, gaddr, fid)
-	c.route.Init(c, gaddr, fid)
+	c.trunk = newTrunkRouteRecorder(time.Second*3, gaddr, faddr)
+	c.route.Init(c, gaddr, faddr)
 	c.game.Start()
 	c.config.logger.Info("start",
 		slog.String("addr", c.laddr.String()),
 		slog.String("network", nodes.GatewayNetwork),
 		slog.String("mode", "fix"),
 		slog.String("gateway", gaddr.String()),
-		slog.Int("forward", int(fid)),
+		slog.String("forward", faddr.String()),
 		slog.String("location", c.config.Location.String()),
 		slog.String("rtt", time.Since(start).String()),
 		slog.Bool("debug", debug.Debug()),
@@ -137,17 +137,16 @@ func (c *Client) start() error {
 	return nil
 }
 
-func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (gaddr netip.AddrPort, forward bvvd.ForwardID, err error) {
+func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (gaddr, faddr netip.AddrPort, err error) {
 	var msgIds []uint32
 
 	var m = msg.Message{}
 	m.Kind = bvvd.PingForward
-	m.ForwardID = 0
 	m.Payload = loc
 	for _, gaddr := range c.config.Gateways {
 		id, err := c.messageRequest(gaddr, m)
 		if err != nil {
-			return netip.AddrPort{}, 0, err
+			return netip.AddrPort{}, netip.AddrPort{}, err
 		}
 		msgIds = append(msgIds, id)
 	}
@@ -162,10 +161,10 @@ func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (gaddr net
 		for _, e := range c.config.Gateways {
 			gates = append(gates, e.String())
 		}
-		return netip.AddrPort{}, 0, errors.Errorf("PingForward location:%s gateways:%s timeout", loc.String(), strings.Join(gates, ","))
+		return netip.AddrPort{}, netip.AddrPort{}, errors.Errorf("PingForward location:%s gateways:%s timeout", loc.String(), strings.Join(gates, ","))
 	}
 
-	return c.config.Gateways[idx], m.ForwardID, nil
+	return c.config.Gateways[idx], m.Forward, nil
 }
 
 func (c *Client) messageRequest(gaddr netip.AddrPort, msg msg.Message) (msgId uint32, err error) {
@@ -191,11 +190,11 @@ func (c *Client) NetworkStats(timeout time.Duration) (s *NetworkStates, err erro
 			bvvd.PackLossGatewayUplink, bvvd.PackLossGatewayDownlink,
 		}
 	)
-	gaddr, fid, _ := c.trunk.Trunk()
+	gaddr, faddr, _ := c.trunk.Trunk()
 
 	var ids []uint32
 	m := msg.Message{}
-	m.ForwardID = fid
+	m.Forward = faddr
 	for _, kind := range kinds {
 		m.Kind = kind
 		id, err := c.messageRequest(gaddr, m)
@@ -236,16 +235,16 @@ func (c *Client) NetworkStats(timeout time.Duration) (s *NetworkStates, err erro
 	return s, err
 }
 
-func (c *Client) RouteProbe(saddr netip.Addr) (gaddr netip.AddrPort, fid bvvd.ForwardID, err error) {
+func (c *Client) RouteProbe(saddr netip.Addr) (gaddr, faddr netip.AddrPort, err error) {
 	coord, err := IPCoord(saddr)
 	if err != nil {
-		return netip.AddrPort{}, 0, err
+		return netip.AddrPort{}, netip.AddrPort{}, err
 	}
 	loc, offset := bvvd.Locations.Match(coord)
 
-	gaddr, fid, err = c.routeProbe(loc, time.Second*3)
+	gaddr, faddr, err = c.routeProbe(loc, time.Second*3)
 	if err != nil {
-		return netip.AddrPort{}, 0, err
+		return netip.AddrPort{}, netip.AddrPort{}, err
 	}
 
 	c.config.logger.Info("route probe",
@@ -253,9 +252,9 @@ func (c *Client) RouteProbe(saddr netip.Addr) (gaddr netip.AddrPort, fid bvvd.Fo
 		slog.String("server", saddr.String()),
 		slog.String("location", loc.String()),
 		slog.String("gateway", gaddr.String()),
-		slog.Int("forward", int(fid)),
+		slog.String("forward", faddr.String()), // todo: 屏蔽
 	)
-	return gaddr, fid, nil
+	return gaddr, faddr, nil
 }
 
 func (c *Client) uplinkService() (_ error) {
@@ -285,7 +284,7 @@ func (c *Client) uplinkService() (_ error) {
 			pkt.SetHead(head1)
 		}
 
-		checksum.ChecksumClient(pkt, info.Proto, info.Server)
+		checksum.ChecksumClient(pkt, uint8(info.Proto), info.Server)
 		hdr.Proto = info.Proto
 		hdr.Server = info.Server
 		hdr.DataID = uint8(c.uplinkId.Add(1))
@@ -294,7 +293,7 @@ func (c *Client) uplinkService() (_ error) {
 			continue // PackLossClientUplink
 		}
 
-		gaddr, hdr.ForwardID, err = c.route.Match(hdr.Server, info.PlayData)
+		gaddr, hdr.Forward, err = c.route.Match(hdr.Server, info.PlayData)
 		if errorx.Temporary(err) {
 			if errors.Is(err, ErrRouteProbe) {
 				c.config.logger.Info("start route probe", slog.String("server", hdr.Server.String()))
@@ -304,7 +303,7 @@ func (c *Client) uplinkService() (_ error) {
 			return c.close(err)
 		}
 		if info.PlayData {
-			c.trunk.Update(gaddr, hdr.ForwardID)
+			c.trunk.Update(gaddr, hdr.Forward)
 		}
 
 		if err := hdr.Encode(pkt); err != nil {
@@ -345,7 +344,7 @@ func (c *Client) downlinkServic() (_ error) {
 		c.downlinkPL.ID(int(hdr.DataID()))
 
 		pkt.DetachN(bvvd.Size)
-		if hdr.Proto() == uint8(header.TCPProtocolNumber) {
+		if hdr.Proto() == header.TCPProtocolNumber {
 			fatun.UpdateTcpMssOption(pkt.Bytes(), c.config.TcpMssDelta)
 		}
 
@@ -353,7 +352,7 @@ func (c *Client) downlinkServic() (_ error) {
 		ip.Encode(&header.IPv4Fields{
 			TotalLength: uint16(pkt.Data()),
 			TTL:         64,
-			Protocol:    hdr.Proto(),
+			Protocol:    uint8(hdr.Proto()),
 			SrcAddr:     tcpip.AddrFrom4(hdr.Server().As4()),
 			DstAddr:     laddr,
 		})

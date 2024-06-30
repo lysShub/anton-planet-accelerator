@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 
 	"github.com/jftuga/geodist"
-	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/pkg/errors"
 )
@@ -21,7 +20,7 @@ type route struct {
 
 	// fixRoute 或者 autoRout 中的非PlayData, 都发送到default
 	defaultGateway netip.AddrPort
-	defaultForward bvvd.ForwardID
+	defaultForward netip.AddrPort
 
 	mu     sync.RWMutex
 	routes map[netip.Addr]entry
@@ -41,15 +40,15 @@ func newRoute(fixRoute bool) *route {
 }
 
 type entry struct {
-	gaddr   netip.AddrPort
-	forward bvvd.ForwardID
+	gateway netip.AddrPort
+	forward netip.AddrPort
 }
 
 type RouteProbe interface {
-	RouteProbe(saddr netip.Addr) (gaddr netip.AddrPort, forward bvvd.ForwardID, err error)
+	RouteProbe(saddr netip.Addr) (gaddr, faddr netip.AddrPort, err error)
 }
 
-func (r *route) Init(probe RouteProbe, defaultGateway netip.AddrPort, defaultForward bvvd.ForwardID) {
+func (r *route) Init(probe RouteProbe, defaultGateway, defaultForward netip.AddrPort) {
 	if !r.inited.Swap(true) {
 		r.defaultGateway = defaultGateway
 		r.defaultForward = defaultForward
@@ -58,9 +57,9 @@ func (r *route) Init(probe RouteProbe, defaultGateway netip.AddrPort, defaultFor
 	}
 }
 
-func (r *route) Match(saddr netip.Addr, probe bool) (gaddr netip.AddrPort, forward bvvd.ForwardID, err error) {
+func (r *route) Match(saddr netip.Addr, probe bool) (gaddr, faddr netip.AddrPort, err error) {
 	if !r.inited.Load() {
-		return netip.AddrPort{}, 0, errors.New("route not init")
+		return netip.AddrPort{}, netip.AddrPort{}, errors.New("route not init")
 	}
 	if !probe || r.fixRouteMode {
 		return r.defaultGateway, r.defaultForward, nil
@@ -70,12 +69,12 @@ func (r *route) Match(saddr netip.Addr, probe bool) (gaddr netip.AddrPort, forwa
 	e, has := r.routes[saddr]
 	r.mu.RUnlock()
 	if has {
-		return e.gaddr, e.forward, nil
+		return e.gateway, e.forward, nil
 	}
 	return r.probe(saddr)
 }
 
-func (r *route) probe(saddr netip.Addr) (gaddr netip.AddrPort, forward bvvd.ForwardID, err error) {
+func (r *route) probe(saddr netip.Addr) (gaddr, faddr netip.AddrPort, err error) {
 	r.inflightMu.RLock()
 	rest, has := r.inflight[saddr]
 	r.inflightMu.RUnlock()
@@ -98,13 +97,13 @@ func (r *route) probe(saddr netip.Addr) (gaddr netip.AddrPort, forward bvvd.Forw
 			e := r.routes[saddr]
 			r.mu.RUnlock()
 
-			gaddr, forward = e.gaddr, e.forward
+			gaddr, faddr = e.gateway, e.forward
 		}
 	} else {
 		err = errorx.WrapTemp(ErrRouteProbing)
 	}
 
-	return gaddr, forward, err
+	return gaddr, faddr, err
 }
 
 type result struct {

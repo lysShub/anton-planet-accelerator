@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/nodes/internal/stats"
 )
 
@@ -67,9 +66,9 @@ func (*NetworkStates) strdur(dur time.Duration) string {
 }
 
 type trunkRouteRecorder struct {
-	scale       time.Duration
-	initPaddr   netip.AddrPort
-	initForward bvvd.ForwardID
+	scale     time.Duration
+	initPaddr netip.AddrPort
+	initFaddr netip.AddrPort
 
 	sync.RWMutex
 	lastWasInit bool
@@ -77,41 +76,41 @@ type trunkRouteRecorder struct {
 	updateTime time.Time
 	updated    bool
 	gaddr      netip.AddrPort
-	forward    bvvd.ForwardID
+	faddr      netip.AddrPort
 }
 
-func newTrunkRouteRecorder(scale time.Duration, gaddr netip.AddrPort, forward bvvd.ForwardID) *trunkRouteRecorder {
+func newTrunkRouteRecorder(scale time.Duration, gaddr, faddr netip.AddrPort) *trunkRouteRecorder {
 	return &trunkRouteRecorder{
-		scale:       scale,
-		initPaddr:   gaddr,
-		initForward: forward,
+		scale:     scale,
+		initPaddr: gaddr,
+		initFaddr: faddr,
 	}
 }
 
-func (r *trunkRouteRecorder) Trunk() (gaddr netip.AddrPort, forward bvvd.ForwardID, updata bool) {
+func (r *trunkRouteRecorder) Trunk() (gaddr, faddr netip.AddrPort, updata bool) {
 	r.Lock()
 	defer r.Unlock()
 
 	if time.Since(r.updateTime) < r.scale {
 		updata = r.updated || r.lastWasInit
 		r.updated, r.lastWasInit = false, false
-		return r.gaddr, r.forward, updata
+		return r.gaddr, r.faddr, updata
 	} else {
 		updata = !r.lastWasInit
 		r.lastWasInit = true
-		return r.initPaddr, r.initForward, updata
+		return r.initPaddr, r.initFaddr, updata
 	}
 }
 
-func (r *trunkRouteRecorder) Update(gaddr netip.AddrPort, forward bvvd.ForwardID) {
+func (r *trunkRouteRecorder) Update(gaddr, faddr netip.AddrPort) {
 	r.Lock()
 	defer r.Unlock()
 
 	if r.gaddr != gaddr {
 		r.gaddr, r.updated = gaddr, true
 	}
-	if r.forward != forward {
-		r.forward, r.updated = forward, true
+	if r.faddr != faddr {
+		r.faddr, r.updated = faddr, true
 	}
 	r.updateTime = time.Now()
 }

@@ -3,14 +3,9 @@ package forward
 import (
 	"log/slog"
 	"os"
-
-	"github.com/lysShub/anton-planet-accelerator/bvvd"
 )
 
 type Config struct {
-	Location  bvvd.Location
-	ForwardID bvvd.ForwardID // todo: alloc from admin
-
 	MaxRecvBuffSize int
 
 	LogPath string

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"net"
+	"net/netip"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/conn"
@@ -25,8 +26,9 @@ import (
 )
 
 type Forward struct {
-	config    *Config
-	forwardID bvvd.ForwardID
+	config *Config
+	faddr  netip.AddrPort
+	loc    bvvd.Location
 
 	conn conn.Conn
 	ps   *Gateways
@@ -38,10 +40,10 @@ type Forward struct {
 
 func New(addr string, config *Config) (*Forward, error) {
 	var f = &Forward{
-		config:    config.init(),
-		forwardID: config.ForwardID,
-		ps:        NewGateways(),
-		links:     links.NewLinks(),
+		config: config.init(),
+		faddr:  netip.MustParseAddrPort(""), // todo:
+		ps:     NewGateways(),
+		links:  links.NewLinks(),
 	}
 	err := internal.DisableOffload(config.logger)
 	if err != nil {
@@ -69,9 +71,12 @@ func (f *Forward) close(cause error) error {
 }
 
 func (f *Forward) Serve() error {
+	panic("获取faddr loc")
+
 	f.config.logger.Info("start",
 		slog.String("listen", f.conn.LocalAddr().String()),
-		slog.String("location", f.config.Location.Hans()),
+		slog.String("faddr", f.faddr.String()),
+		slog.String("location", f.loc.Hans()),
 		slog.Bool("debug", debug.Debug()),
 	)
 	return f.uplinkService()
@@ -99,8 +104,8 @@ func (f *Forward) uplinkService() (err error) {
 				f.config.logger.Error(err.Error(), errorx.Trace(err))
 				continue
 			}
-			msg.ForwardID = f.forwardID
-			msg.Payload = f.config.Location
+			msg.Forward = f.faddr
+			msg.Payload = f.loc
 			if err := msg.Encode(pkt.SetData(0)); err != nil {
 				f.config.logger.Error(err.Error(), errorx.Trace(err))
 				continue
@@ -130,8 +135,8 @@ func (f *Forward) uplinkService() (err error) {
 			// remove bvvd header
 			pkt = pkt.DetachN(bvvd.Size)
 			if debug.Debug() {
-				require.True(test.T(), checksum.ValidChecksum(pkt, hdr.Proto(), hdr.Server()))
-				require.Equal(test.T(), f.forwardID, hdr.ForwardID())
+				require.True(test.T(), checksum.ValidChecksum(pkt, uint8(hdr.Proto()), hdr.Server()))
+				require.Equal(test.T(), f.faddr, hdr.Forward())
 			}
 
 			// only get port, tcp/udp is same
@@ -139,7 +144,7 @@ func (f *Forward) uplinkService() (err error) {
 
 			// read/create corresponding link, the link will self close by keepalive,
 			// so if Send/Recv return net.ErrClosed error should ignore.
-			link, new, err := f.links.Link(ep, gaddr, f.forwardID)
+			link, new, err := f.links.Link(ep, gaddr, f.faddr)
 			if err != nil {
 				return f.close(err)
 			} else if new {
