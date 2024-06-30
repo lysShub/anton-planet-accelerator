@@ -13,6 +13,7 @@ import (
 	"github.com/lysShub/anton-planet-accelerator/conn"
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/nodes/forward/links"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal"
 	"github.com/lysShub/anton-planet-accelerator/nodes/internal/checksum"
 	"github.com/lysShub/anton-planet-accelerator/nodes/internal/msg"
 	"github.com/lysShub/netkit/debug"
@@ -42,7 +43,7 @@ func New(addr string, config *Config) (*Forward, error) {
 		ps:        NewGateways(),
 		links:     links.NewLinks(),
 	}
-	err := nodes.DisableOffload(config.logger)
+	err := internal.DisableOffload(config.logger)
 	if err != nil {
 		return nil, err
 	}

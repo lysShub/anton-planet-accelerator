@@ -88,8 +88,8 @@ func (f *Forwards) GetByLocation(loc bvvd.Location) []*Forward {
 	}
 }
 
-func (f *Forwards) Add(loc bvvd.Location, id bvvd.ForwardID, faddr netip.AddrPort) error {
-	fw, err := newForward(loc, id, faddr)
+func (f *Forwards) Add(faddr netip.AddrPort, id bvvd.ForwardID, loc bvvd.Location) error {
+	fw, err := newForward(faddr, id, loc)
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ type Forward struct {
 	donwlinkPL *stats.PLStats // forward-->gateway pl
 }
 
-func newForward(loc bvvd.Location, id bvvd.ForwardID, faddr netip.AddrPort) (*Forward, error) {
+func newForward(faddr netip.AddrPort, id bvvd.ForwardID, loc bvvd.Location) (*Forward, error) {
 	if !loc.Valid() {
 		return nil, errors.Errorf("invalid forward location %s", loc.String())
 	} else if !id.Vaid() {
