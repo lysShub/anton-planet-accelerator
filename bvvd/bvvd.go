@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"syscall"
 
-	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
 )
@@ -64,28 +63,48 @@ func (b Bvvd) SetServer(server netip.Addr) {
 
 type Fields struct {
 	Kind      Kind           // kind
-	Proto     uint8          // tcp or udp
-	DataID    uint8          // PL statistics
-	ForwardID ForwardID      // forward id
-	Client    netip.AddrPort // client addr, set by gateway
-	Server    netip.Addr     // destination ip
+	Proto     uint8          // opt, tcp or udp
+	DataID    uint8          // opt, use for PL statistics
+	ForwardID ForwardID      // opt, forward id
+	Client    netip.AddrPort // opt, client addr, set by gateway
+	Server    netip.Addr     // opt, destination ip
 }
 
 const MaxID = 0xff
 const Size = 14
 
-func (h *Fields) Valid() bool {
-	ok := h != nil &&
-		h.Kind.Valid() &&
-		h.Server.Is4() && h.Client.Addr().Is4()
-	if !ok {
-		return ok
+func (h Fields) Valid() error {
+	switch h.Kind {
+	case Data:
+		if h.Proto != syscall.IPPROTO_TCP && h.Proto != syscall.IPPROTO_UDP {
+			return errors.Errorf("proto %d", h.Proto)
+		}
+		if err := h.ForwardID.Valid(); err != nil {
+			return err
+		}
+		if !h.Server.IsValid() {
+			return errors.Errorf("server invalid")
+		}
+	case PingGateway:
+	case PingForward:
+		if err := h.ForwardID.Valid(); err != nil {
+			return err
+		}
+	case PingServer:
+		if err := h.ForwardID.Valid(); err != nil {
+			return err
+		}
+		if !h.Server.IsValid() || h.Server.IsUnspecified() {
+			return errors.Errorf("server %s", h.Server.String())
+		}
+	case PackLossClientUplink:
+	case PackLossGatewayUplink:
+	case PackLossGatewayDownlink:
+	default:
+		return h.Kind.Valid()
 	}
 
-	if h.Kind == Data {
-		return (h.Proto == syscall.IPPROTO_UDP || h.Proto == syscall.IPPROTO_TCP)
-	}
-	return true
+	return nil
 }
 
 func (h Fields) String() string {
@@ -96,12 +115,20 @@ func (h Fields) String() string {
 }
 
 func (h *Fields) Encode(to *packet.Packet) error {
-	if !h.Valid() {
-		return errorx.WrapTemp(errors.Errorf("invalid header %#v", h))
+	if err := h.Valid(); err != nil {
+		return err
 	}
 
-	to.Attach(h.Server.AsSlice()...)
-	to.Attach(h.Client.Addr().AsSlice()...)
+	if h.Server.IsValid() {
+		to.Attach(h.Server.AsSlice()...)
+	} else {
+		to.Attach(0, 0, 0, 0)
+	}
+	if h.Client.Addr().IsValid() {
+		to.Attach(h.Client.Addr().AsSlice()...)
+	} else {
+		to.Attach(0, 0, 0, 0)
+	}
 	to.Attach(byte(h.Client.Port()), byte(h.Client.Port()>>8))
 	to.Attach(byte(h.ForwardID))
 	to.Attach(h.DataID)
@@ -125,18 +152,18 @@ func (h *Fields) Decode(from *packet.Packet) error {
 		uint16(b[4])+uint16(b[5])<<8,
 	)
 	h.Server = netip.AddrFrom4([4]byte(b[10:]))
-	if !h.Valid() {
-		return errors.Errorf("invalid header %s", h.String())
-	}
 
 	from.DetachN(Size)
-	return nil
+	return h.Valid()
 }
 
 type Kind uint8
 
-func (k Kind) Valid() bool {
-	return 0 < k && k < _kind_end
+func (k Kind) Valid() error {
+	if 0 < k && k < _kind_end {
+		return nil
+	}
+	return errors.Errorf("kind %s", k.String())
 }
 
 const (
@@ -150,21 +177,30 @@ const (
 	PingGateway
 
 	// rtt client  <--> forward
-	// 此数据包除了延时、还有探测路由的作用，如果Clinet发送时没有设置ForwardID, 那么应该负载Location
-	// Forward 回复此数据包时，必须负载ForwardID
 	PingForward
 
-	// pl  client  ---> gateway
-	PackLossClientUplink
+	// rtt client <--> server
+	PingServer
 
 	// pl  gateway ---> forward
 	PackLossGatewayUplink
 
 	// pl  forward ---> gateway
 	PackLossGatewayDownlink
+
+	// pl  client  ---> gateway
+	PackLossClientUplink
+
 	_kind_end
 )
 
 type ForwardID uint8
 
-func (f ForwardID) Vaid() bool { return f != 0 }
+func (f ForwardID) Valid() error {
+	if f.valid() {
+		return errors.Errorf("forward id %d", f)
+	}
+	return nil
+}
+
+func (f ForwardID) valid() bool { return f != 0 }

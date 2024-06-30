@@ -2,7 +2,6 @@ package msg
 
 import (
 	"encoding/binary"
-	"net/netip"
 	"unsafe"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
@@ -22,30 +21,13 @@ type Message struct {
 }
 
 func (m *Message) Encode(to *packet.Packet) (err error) {
-	switch m.Kind {
-	case bvvd.PingGateway:
-	case bvvd.PingForward:
-		if !m.ForwardID.Vaid() && m.Payload == nil {
-			return errors.Errorf("PingForward message require ForwardID or Payload")
-		}
-	case bvvd.PackLossClientUplink:
-	case bvvd.PackLossGatewayUplink:
-	case bvvd.PackLossGatewayDownlink:
-	default:
-		return errors.Errorf("unknown message kind %s", m.Kind.String())
-	}
-	if m.MsgID == 0 {
-		return errors.Errorf("require message id")
-	}
 
-	if !m.Client.IsValid() {
-		m.Client = netip.AddrPortFrom(netip.IPv4Unspecified(), 0)
-	}
-	if !m.Server.IsValid() {
-		m.Server = netip.IPv4Unspecified()
-	}
 	if err := m.Fields.Encode(to); err != nil {
 		return err
+	}
+
+	if m.MsgID == 0 {
+		return errors.Errorf("require message id")
 	}
 	to.Append(binary.BigEndian.AppendUint32(make([]byte, 0, 4), m.MsgID)...)
 
@@ -78,12 +60,6 @@ func (m *Message) Decode(from *packet.Packet) error {
 	if err := m.Fields.Decode(from); err != nil {
 		return err
 	}
-	if !m.Client.IsValid() {
-		m.Client = netip.AddrPortFrom(netip.IPv4Unspecified(), 0)
-	}
-	if !m.Server.IsValid() {
-		m.Server = netip.IPv4Unspecified()
-	}
 
 	if from.Data() < 4 {
 		return errors.Errorf("too small %d", from.Data())
@@ -98,8 +74,8 @@ func (m *Message) Decode(from *packet.Packet) error {
 	case bvvd.PingForward:
 		if from.Data() > 0 {
 			m.Payload = bvvd.Location(from.Detach(1)[0])
-		} else if !m.ForwardID.Vaid() {
-			return errors.Errorf("PingForward message require ForwardID or Payload")
+		} else if err := m.ForwardID.Valid(); err != nil {
+			return err
 		}
 	case bvvd.PackLossGatewayUplink, bvvd.PackLossClientUplink, bvvd.PackLossGatewayDownlink:
 		if from.Data() > 0 {

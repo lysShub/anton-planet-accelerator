@@ -48,7 +48,7 @@ func (c *Config) init() *Config {
 	}
 	c.logger = slog.New(slog.NewJSONHandler(fh, nil))
 
-	if !c.Location.Valid() {
+	if c.Location.Valid() != nil {
 		panic("require location")
 	}
 

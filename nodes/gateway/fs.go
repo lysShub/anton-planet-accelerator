@@ -117,10 +117,10 @@ type Forward struct {
 }
 
 func newForward(faddr netip.AddrPort, id bvvd.ForwardID, loc bvvd.Location) (*Forward, error) {
-	if !loc.Valid() {
-		return nil, errors.Errorf("invalid forward location %s", loc.String())
-	} else if !id.Vaid() {
-		return nil, errors.Errorf("invalid forward id %d", id)
+	if err := loc.Valid(); err != nil {
+		return nil, err
+	} else if err := id.Valid(); err != nil {
+		return nil, err
 	} else if !faddr.IsValid() {
 		return nil, errors.Errorf("invalid forward address %s", faddr.String())
 	}

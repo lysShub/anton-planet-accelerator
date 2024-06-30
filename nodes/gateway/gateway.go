@@ -158,7 +158,7 @@ func (p *Gateway) uplinkService() (_ error) {
 			}
 		case bvvd.PingForward:
 			hdr.SetClient(caddr)
-			if !hdr.ForwardID().Vaid() {
+			if hdr.ForwardID().Valid() == nil {
 				// boardcast forward
 				var fs []*Forward
 				{

@@ -4,25 +4,33 @@ import (
 	"slices"
 
 	"github.com/jftuga/geodist"
+	"github.com/pkg/errors"
 )
 
 //go:generate stringer -output location_gen.go -type=Location
 
 type Location uint8
 
-func (l Location) Valid() bool {
+func (l Location) Valid() error {
+	if l.valid() {
+		return errors.Errorf("invalid location %d", l)
+	}
+	return nil
+}
+
+func (l Location) valid() bool {
 	return 0 < l && l < _end
 }
 
 func (l Location) Coord() geodist.Coord {
-	if l.Valid() {
+	if l.valid() {
 		return infos[int(l)].coord
 	}
 	panic(l.String())
 }
 
 func (l Location) Hans() string {
-	if l.Valid() {
+	if l.valid() {
 		return infos[int(l)].hans
 	}
 	panic(l.String())

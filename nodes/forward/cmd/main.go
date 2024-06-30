@@ -18,7 +18,7 @@ import (
 func main() {
 	var loc bvvd.Location
 	for i, e := range os.Args {
-		if i > 0 && !loc.Valid() {
+		if i > 0 && loc.Valid() != nil {
 			for _, l := range bvvd.Locations {
 				if l.Hans() == strings.TrimSpace(e) {
 					loc = l
@@ -26,7 +26,7 @@ func main() {
 			}
 		}
 	}
-	if !loc.Valid() {
+	if loc.Valid() != nil {
 		fmt.Println("require location")
 		return
 	}
