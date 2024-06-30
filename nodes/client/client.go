@@ -20,6 +20,7 @@ import (
 	"github.com/lysShub/anton-planet-accelerator/nodes/client/game"
 	"github.com/lysShub/anton-planet-accelerator/nodes/client/inject"
 	"github.com/lysShub/anton-planet-accelerator/nodes/internal/checksum"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal/heap"
 	"github.com/lysShub/anton-planet-accelerator/nodes/internal/msg"
 	"github.com/lysShub/anton-planet-accelerator/nodes/internal/stats"
 	"github.com/lysShub/fatun"
@@ -43,10 +44,9 @@ type Client struct {
 	uplinkId   atomic.Uint32
 	downlinkPL *stats.PLStats
 
-	route *route
-	trunk *trunkRouteRecorder
-
-	msgMgr *messageManager
+	route   *route
+	trunk   *trunkRouteRecorder
+	msgbuff *heap.Heap[msg.Message]
 
 	pcap *pcap.Pcap
 
@@ -58,7 +58,7 @@ func New(config *Config) (*Client, error) {
 		config:     config.init(),
 		downlinkPL: stats.NewPLStats(bvvd.MaxID),
 		route:      newRoute(config.FixRoute),
-		msgMgr:     newMessageManager(),
+		msgbuff:    heap.NewHeap[msg.Message](16),
 	}
 	var err error
 
@@ -153,10 +153,10 @@ func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (gaddr net
 	}
 
 	var idx int
-	m, ok := c.msgMgr.PopBy(func(m msg.Message) (pop bool) {
+	m, ok := c.msgbuff.PopByDeadline(func(m msg.Message) (pop bool) {
 		idx = slices.Index(msgIds, m.MsgID)
 		return idx >= 0
-	}, timeout)
+	}, time.Now().Add(timeout))
 	if !ok {
 		gates := []string{}
 		for _, e := range c.config.Gateways {
@@ -171,7 +171,7 @@ func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (gaddr net
 func (c *Client) messageRequest(gaddr netip.AddrPort, msg msg.Message) (msgId uint32, err error) {
 	var pkt = packet.Make(64 + bvvd.Size)
 
-	msg.MsgID = c.msgMgr.ID()
+	msg.MsgID = rand.Uint32()
 	if err := msg.Encode(pkt); err != nil {
 		return 0, err
 	}
@@ -207,9 +207,9 @@ func (c *Client) NetworkStats(timeout time.Duration) (s *NetworkStates, err erro
 
 	s = &NetworkStates{}
 	for i := 0; i < len(kinds); i++ {
-		msg, ok := c.msgMgr.PopBy(func(m msg.Message) (pop bool) {
+		msg, ok := c.msgbuff.PopByDeadline(func(m msg.Message) (pop bool) {
 			return slices.Contains(ids, m.MsgID)
-		}, time.Second*3)
+		}, time.Now().Add(time.Second*3))
 		if !ok {
 			err = errorx.WrapTemp(errors.New("timeout"))
 			break
@@ -333,9 +333,12 @@ func (c *Client) downlinkServic() (_ error) {
 		hdr := bvvd.Bvvd(pkt.Bytes())
 
 		if hdr.Kind() != bvvd.Data {
-			if err = c.msgMgr.Put(pkt); err != nil {
+			var msg = msg.Message{}
+			if err := msg.Decode(pkt); err != nil {
 				c.config.logger.Warn(err.Error(), errorx.Trace(err))
 			}
+
+			c.msgbuff.MustPut(msg)
 			continue
 		}
 

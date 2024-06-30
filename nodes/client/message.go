@@ -3,60 +3,16 @@ package client
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"net/netip"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode/utf8"
 	"unsafe"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
-	"github.com/lysShub/anton-planet-accelerator/nodes/internal/heap"
-	"github.com/lysShub/anton-planet-accelerator/nodes/internal/msg"
 	"github.com/lysShub/anton-planet-accelerator/nodes/internal/stats"
-	"github.com/lysShub/netkit/packet"
 )
-
-type messageManager struct {
-	id   atomic.Uint32
-	buff *heap.Heap[msg.Message]
-}
-
-func newMessageManager() *messageManager {
-	var m = &messageManager{
-		buff: heap.NewHeap[msg.Message](16),
-	}
-	m.id.Store(rand.Uint32())
-	return m
-}
-
-func (m *messageManager) ID() uint32 {
-	id := m.id.Add(1) - 1
-	if id == 0 {
-		return m.ID()
-	}
-	return id
-}
-
-func (m *messageManager) Put(pkt *packet.Packet) error {
-	var msg = msg.Message{}
-	if err := msg.Decode(pkt); err != nil {
-		return err
-	}
-
-	m.buff.MustPut(msg)
-	return nil
-}
-
-func (m *messageManager) PopByID(id uint32) msg.Message {
-	return m.buff.PopBy(func(e msg.Message) (pop bool) { return e.MsgID == id })
-}
-
-func (m *messageManager) PopBy(fn func(msg.Message) (pop bool), timeout time.Duration) (smg msg.Message, ok bool) {
-	return m.buff.PopByDeadline(fn, time.Now().Add(timeout))
-}
 
 type NetworkStates struct {
 	PingGateway             time.Duration
