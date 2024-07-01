@@ -1,9 +1,16 @@
 package internal
 
 import (
-	"errors"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/netip"
 	"os/exec"
+
+	"github.com/jftuga/geodist"
+	"github.com/pkg/errors"
 )
 
 func DisableOffload(logger *slog.Logger) error {
@@ -39,4 +46,54 @@ func DisableOffload(logger *slog.Logger) error {
 		return errors.New("disable offset failed")
 	}
 	return nil
+}
+
+// todo: temp, should from admin
+func IPCoord(addr netip.Addr) (geodist.Coord, error) {
+	if !addr.Is4() {
+		return geodist.Coord{}, errors.New("only support ipv4")
+	}
+
+	url := fmt.Sprintf(`http://ip-api.com/json/%s?fields=status,country,lat,lon,query`, addr.String())
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return geodist.Coord{}, errors.WithStack(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return geodist.Coord{}, errors.Errorf("http code %d", resp.StatusCode)
+	}
+
+	var ret = struct {
+		Status  string
+		Country string
+		Lat     float64
+		Lon     float64
+		Query   string
+	}{}
+	err = json.NewDecoder(resp.Body).Decode(&ret)
+	if err != nil {
+		return geodist.Coord{}, err
+	}
+	if ret.Status != "success" && ret.Query != addr.String() {
+		return geodist.Coord{}, errors.Errorf("invalid response %#v", ret)
+	}
+
+	return geodist.Coord{Lat: ret.Lat, Lon: ret.Lon}, nil
+}
+
+// todo: temp
+func PublicAddr() (netip.Addr, error) {
+	resp, err := http.Get("http://ifconfig.cc")
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	return netip.ParseAddr(string(data))
 }

@@ -1,15 +1,11 @@
 package client
 
 import (
-	"encoding/json"
 	stderr "errors"
-	"fmt"
-	"net/http"
 	"net/netip"
 	"sync"
 	"sync/atomic"
 
-	"github.com/jftuga/geodist"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/pkg/errors"
 )
@@ -128,38 +124,3 @@ func (r *route) probeRoute(saddr netip.Addr) {
 
 var ErrRouteProbe = stderr.New("start route probe")
 var ErrRouteProbing = stderr.New("route probing")
-
-// todo: temp, should from admin
-func IPCoord(addr netip.Addr) (geodist.Coord, error) {
-	if !addr.Is4() {
-		return geodist.Coord{}, errors.New("only support ipv4")
-	}
-
-	url := fmt.Sprintf(`http://ip-api.com/json/%s?fields=status,country,lat,lon,query`, addr.String())
-
-	resp, err := http.Get(url)
-	if err != nil {
-		return geodist.Coord{}, errors.WithStack(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return geodist.Coord{}, errors.Errorf("http code %d", resp.StatusCode)
-	}
-
-	var ret = struct {
-		Status  string
-		Country string
-		Lat     float64
-		Lon     float64
-		Query   string
-	}{}
-	err = json.NewDecoder(resp.Body).Decode(&ret)
-	if err != nil {
-		return geodist.Coord{}, err
-	}
-	if ret.Status != "success" && ret.Query != addr.String() {
-		return geodist.Coord{}, errors.Errorf("invalid response %#v", ret)
-	}
-
-	return geodist.Coord{Lat: ret.Lat, Lon: ret.Lon}, nil
-}

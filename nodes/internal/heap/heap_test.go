@@ -9,7 +9,7 @@ import (
 )
 
 func Test_Heap(t *testing.T) {
-	t.Run("put pop", func(t *testing.T) {
+	t.Run("Put pop", func(t *testing.T) {
 		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3, 4}
@@ -19,18 +19,18 @@ func Test_Heap(t *testing.T) {
 		require.Equal(t, 4, h.Size())
 
 		for _, e := range vals {
-			require.Equal(t, e, h.Pop())
+			require.Equal(t, e, h.PopTail())
 		}
 		require.Zero(t, h.Size())
 	})
 
-	t.Run("put full block", func(t *testing.T) {
+	t.Run("Put full block", func(t *testing.T) {
 		h := heap.NewHeap[int](4)
 
 		s := time.Now()
 		go func() {
 			time.Sleep(time.Second * 2)
-			h.Pop()
+			h.PopTail()
 		}()
 
 		vals := []int{1, 2, 3, 4, 5}
@@ -44,12 +44,12 @@ func Test_Heap(t *testing.T) {
 			if i == 0 {
 				continue
 			}
-			require.Equal(t, e, h.Pop())
+			require.Equal(t, e, h.PopTail())
 		}
 		require.Zero(t, h.Size())
 	})
 
-	t.Run("pop empty block", func(t *testing.T) {
+	t.Run("PopTail empty block", func(t *testing.T) {
 		h := heap.NewHeap[int](4)
 
 		s := time.Now()
@@ -58,7 +58,7 @@ func Test_Heap(t *testing.T) {
 			h.Put(1)
 		}()
 
-		val := h.Pop()
+		val := h.PopTail()
 		require.Greater(t, time.Since(s), time.Second)
 		require.Equal(t, 1, val)
 	})
@@ -73,12 +73,12 @@ func Test_Heap(t *testing.T) {
 		require.Equal(t, 4, h.Size())
 
 		for _, e := range vals[3:] {
-			require.Equal(t, e, h.Pop())
+			require.Equal(t, e, h.PopTail())
 		}
 		require.Zero(t, h.Size())
 	})
 
-	t.Run("range", func(t *testing.T) {
+	t.Run("RangeDeadline", func(t *testing.T) {
 		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3, 4, 5, 6, 7}
@@ -88,10 +88,10 @@ func Test_Heap(t *testing.T) {
 		require.Equal(t, 4, h.Size())
 
 		es := []int{}
-		h.Range(func(e int) (stop bool) {
+		h.RangeDeadline(func(e int) (stop bool) {
 			es = append(es, e)
 			return
-		})
+		}, time.Now().Add(time.Second))
 		require.Equal(t, 4, h.Size())
 
 		for i, e := range es {
@@ -99,7 +99,7 @@ func Test_Heap(t *testing.T) {
 		}
 	})
 
-	t.Run("PopBy", func(t *testing.T) {
+	t.Run("Pop", func(t *testing.T) {
 		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3, 4, 5, 6, 7}
@@ -108,7 +108,7 @@ func Test_Heap(t *testing.T) {
 		}
 		require.Equal(t, 4, h.Size())
 
-		val := h.PopBy(func(e int) (pop bool) {
+		val := h.Pop(func(e int) (pop bool) {
 			return e == 5
 		})
 		require.Equal(t, 5, val)
@@ -116,12 +116,12 @@ func Test_Heap(t *testing.T) {
 
 		es := []int{}
 		for h.Size() > 0 {
-			es = append(es, h.Pop())
+			es = append(es, h.PopTail())
 		}
 		require.Equal(t, []int{4, 6, 7}, es)
 	})
 
-	t.Run("PopBy 2", func(t *testing.T) {
+	t.Run("Pop 2", func(t *testing.T) {
 		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3, 4, 5, 6, 7}
@@ -130,7 +130,7 @@ func Test_Heap(t *testing.T) {
 		}
 		require.Equal(t, 4, h.Size())
 
-		val := h.PopBy(func(e int) (pop bool) {
+		val := h.Pop(func(e int) (pop bool) {
 			return e == 4
 		})
 		require.Equal(t, 4, val)
@@ -138,12 +138,12 @@ func Test_Heap(t *testing.T) {
 
 		es := []int{}
 		for h.Size() > 0 {
-			es = append(es, h.Pop())
+			es = append(es, h.PopTail())
 		}
 		require.Equal(t, []int{5, 6, 7}, es)
 	})
 
-	t.Run("PopBy block", func(t *testing.T) {
+	t.Run("Pop block", func(t *testing.T) {
 		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3}
@@ -159,7 +159,7 @@ func Test_Heap(t *testing.T) {
 		}()
 
 		s := time.Now()
-		val := h.PopBy(func(e int) (pop bool) {
+		val := h.Pop(func(e int) (pop bool) {
 			return e == 5
 		})
 		require.Equal(t, 5, val)
@@ -167,7 +167,7 @@ func Test_Heap(t *testing.T) {
 		require.Greater(t, time.Since(s), time.Second)
 	})
 
-	t.Run("PopByDeadline not dead", func(t *testing.T) {
+	t.Run("PopDeadline not dead", func(t *testing.T) {
 		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3}
@@ -183,7 +183,7 @@ func Test_Heap(t *testing.T) {
 		}()
 
 		s := time.Now()
-		val, dead := h.PopByDeadline(func(e int) (pop bool) {
+		val, dead := h.PopDeadline(func(e int) (pop bool) {
 			return e == 5
 		}, time.Now().Add(time.Minute))
 		require.False(t, dead)
@@ -192,7 +192,7 @@ func Test_Heap(t *testing.T) {
 		require.Greater(t, time.Since(s), time.Second)
 	})
 
-	t.Run("PopByDeadline dead", func(t *testing.T) {
+	t.Run("PopDeadline dead", func(t *testing.T) {
 		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3}
@@ -208,7 +208,7 @@ func Test_Heap(t *testing.T) {
 		}()
 
 		s := time.Now()
-		val, dead := h.PopByDeadline(func(e int) (pop bool) {
+		val, dead := h.PopDeadline(func(e int) (pop bool) {
 			return e == 5
 		}, time.Now().Add(time.Second))
 		require.True(t, dead)
@@ -217,7 +217,7 @@ func Test_Heap(t *testing.T) {
 		require.Less(t, time.Since(s), time.Second*2)
 	})
 
-	t.Run("PopByDeadline expire", func(t *testing.T) {
+	t.Run("PopDeadline expire", func(t *testing.T) {
 		h := heap.NewHeap[int](4)
 
 		vals := []int{1, 2, 3}
@@ -233,7 +233,7 @@ func Test_Heap(t *testing.T) {
 		}()
 
 		s := time.Now()
-		val, dead := h.PopByDeadline(func(e int) (pop bool) {
+		val, dead := h.PopDeadline(func(e int) (pop bool) {
 			return e == 5
 		}, time.Now().Add(-time.Second))
 		require.True(t, dead)

@@ -161,7 +161,7 @@ func (p *Gateway) uplinkService() (_ error) {
 			if err := p.conn.WriteToAddrPort(pkt, caddr); err != nil {
 				return p.close(err)
 			}
-		case bvvd.PingForward:
+		case bvvd.PingForward, bvvd.PingServer:
 			var faddrs []netip.AddrPort
 			if hdr.Forward().Addr().IsUnspecified() {
 				faddrs = p.fs.Forwards() // boardcast
@@ -205,7 +205,9 @@ func (p *Gateway) uplinkService() (_ error) {
 				return p.close(err)
 			}
 		case bvvd.Data:
+			// todo: 也许应该保留clinet data id, 现在PackLossGateway是共用的，可能会不准确
 			p.cs.Client(caddr).UplinkID(int(hdr.DataID()))
+
 			if debug.Debug() {
 				ok := checksum.ValidChecksum(pkt.DetachN(bvvd.Size), uint8(hdr.Proto()), hdr.Server())
 				pkt.AttachN(bvvd.Size)

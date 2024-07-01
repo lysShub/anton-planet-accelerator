@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// todo: add close
 type Heap[T any] struct {
 	mu          sync.RWMutex
 	rw          *sync.Cond
@@ -38,7 +39,7 @@ func (h *Heap[T]) MustPut(t T) {
 	defer h.mu.Unlock()
 
 	for !h.putLocked(t) {
-		h.popLocked()
+		h.popTailLocked()
 	}
 }
 
@@ -58,13 +59,13 @@ func (h *Heap[T]) putLocked(t T) bool {
 	return true
 }
 
-func (h *Heap[T]) Pop() (val T) {
+func (h *Heap[T]) PopTail() (val T) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	var ok bool
 	for !ok {
-		val, ok = h.popLocked()
+		val, ok = h.popTailLocked()
 		if !ok {
 			h.rw.Wait()
 		}
@@ -72,7 +73,7 @@ func (h *Heap[T]) Pop() (val T) {
 	return val
 }
 
-func (h *Heap[T]) popLocked() (val T, ok bool) {
+func (h *Heap[T]) popTailLocked() (val T, ok bool) {
 	if ok = h.size > 0; !ok {
 		return
 	}
@@ -89,13 +90,13 @@ func (h *Heap[T]) popLocked() (val T, ok bool) {
 	return val, true
 }
 
-func (h *Heap[T]) PopBy(fn func(e T) (pop bool)) (val T) {
+func (h *Heap[T]) Pop(fn func(e T) (pop bool)) (val T) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.popByLocked(fn, nil)
 }
 
-func (h *Heap[T]) PopByDeadline(fn func(T) bool, deadline time.Time) (val T, ok bool) {
+func (h *Heap[T]) PopDeadline(fn func(e T) (pop bool), deadline time.Time) (val T, ok bool) {
 	var dead atomic.Bool
 	defer time.AfterFunc(time.Until(deadline), func() {
 		dead.Store(true)
@@ -108,16 +109,12 @@ func (h *Heap[T]) PopByDeadline(fn func(T) bool, deadline time.Time) (val T, ok 
 }
 
 func (h *Heap[T]) popByLocked(fn func(T) bool, dead *atomic.Bool) (val T) {
-	var i = -1
-	for i < 0 {
-
-		// todo: optimize, only visit last one(?) after first range
-		i = h.rangeLocked(fn)
-		if i < 0 {
-			if dead != nil && dead.Load() {
-				return
-			}
-			h.rw.Wait()
+	i := h.syncRangeLocked(fn, dead)
+	if i < 0 {
+		if dead != nil {
+			dead.Store(true)
+		} else {
+			panic("impossible")
 		}
 	}
 	return h.del(i)
@@ -141,9 +138,35 @@ func (h *Heap[T]) Size() int {
 }
 
 func (h *Heap[T]) Range(fn func(e T) (stop bool)) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	h.rangeLocked(fn)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.syncRangeLocked(fn, nil)
+}
+
+func (h *Heap[T]) RangeDeadline(fn func(T) bool, deadline time.Time) (dead bool) {
+	var d atomic.Bool
+	defer time.AfterFunc(time.Until(deadline), func() {
+		d.Store(true)
+		h.rw.Broadcast()
+	}).Stop()
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.syncRangeLocked(fn, &d) < 0
+}
+
+func (h *Heap[T]) syncRangeLocked(fn func(T) bool, dead *atomic.Bool) (hitIdx int) {
+	var i = -1
+	for i < 0 && (dead == nil || !dead.Load()) {
+
+		// todo: optimize, only visit last one(?) after first range
+		i = h.rangeLocked(fn)
+		if i < 0 {
+			h.rw.Wait()
+		}
+	}
+	return i
 }
 
 func (h *Heap[T]) rangeLocked(fn func(T) (stop bool)) (hitIdx int) {

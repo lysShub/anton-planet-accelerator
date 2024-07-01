@@ -12,6 +12,8 @@ const MinSize = bvvd.Size + 4
 
 type Message []byte
 
+func (m Message) Kind() bvvd.Kind { return bvvd.Bvvd(m).Kind() }
+
 func (m Message) MsgID() uint32 {
 	return binary.BigEndian.Uint32(m[bvvd.Size:])
 }

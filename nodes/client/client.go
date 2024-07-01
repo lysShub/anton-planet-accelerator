@@ -4,12 +4,12 @@
 package client
 
 import (
+	"fmt"
 	"log/slog"
 	"math"
 	"math/rand"
 	"net/netip"
 	"slices"
-	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -19,6 +19,7 @@ import (
 	"github.com/lysShub/anton-planet-accelerator/nodes"
 	"github.com/lysShub/anton-planet-accelerator/nodes/client/game"
 	"github.com/lysShub/anton-planet-accelerator/nodes/client/inject"
+	"github.com/lysShub/anton-planet-accelerator/nodes/internal"
 	"github.com/lysShub/anton-planet-accelerator/nodes/internal/checksum"
 	"github.com/lysShub/anton-planet-accelerator/nodes/internal/heap"
 	"github.com/lysShub/anton-planet-accelerator/nodes/internal/msg"
@@ -46,11 +47,17 @@ type Client struct {
 
 	route   *route
 	trunk   *trunkRouteRecorder
-	msgbuff *heap.Heap[msg.Message]
+	msgbuff *heap.Heap[message]
 
 	pcap *pcap.Pcap
 
 	closeErr errorx.CloseErr
+}
+
+type message struct {
+	msg.Message
+	gaddr netip.AddrPort
+	time  time.Time
 }
 
 func New(config *Config) (*Client, error) {
@@ -58,7 +65,7 @@ func New(config *Config) (*Client, error) {
 		config:     config.init(),
 		downlinkPL: stats.NewPLStats(bvvd.MaxID),
 		route:      newRoute(config.FixRoute),
-		msgbuff:    heap.NewHeap[msg.Message](16),
+		msgbuff:    heap.NewHeap[message](16),
 	}
 	var err error
 
@@ -113,10 +120,14 @@ func (c *Client) start() error {
 	go c.uplinkService()
 	go c.downlinkServic()
 
+	// todo: use ping server (缓存各个游戏各节点server ip)
 	var start = time.Now()
-	gaddr, faddr, err := c.routeProbe(c.config.Location, time.Second*3)
-	if err != nil {
-		c.config.logger.Error(err.Error(), errorx.Trace(err))
+	var gaddr, faddr netip.AddrPort
+	if err := c.boardcastPingForward(func(m message) bool {
+		gaddr = m.gaddr
+		faddr = bvvd.Bvvd(m.Message).Forward()
+		return true
+	}, time.Second*3); err != nil {
 		return err
 	}
 
@@ -137,48 +148,79 @@ func (c *Client) start() error {
 	return nil
 }
 
-func (c *Client) routeProbe(loc bvvd.Location, timeout time.Duration) (gaddr, faddr netip.AddrPort, err error) {
-	var msgIds []uint32
+func (c *Client) RouteProbe(saddr netip.Addr) (gaddr, faddr netip.AddrPort, err error) {
+	start := time.Now()
 
-	var m = msg.Message{}
-	m.Kind = bvvd.PingForward
-	m.Payload = loc
-	for _, gaddr := range c.config.Gateways {
-		id, err := c.messageRequest(gaddr, m)
+	if err := c.boardcastPingServer(saddr, func(msg message) (pop bool) {
+		gaddr = msg.gaddr
+		faddr = bvvd.Bvvd(msg.Message).Forward()
+		return true
+	}, time.Second*3); err != nil {
+		return netip.AddrPort{}, netip.AddrPort{}, err
+	}
+
+	c.config.logger.Info("route probe server",
+		slog.String("gateway", gaddr.String()),
+		slog.String("forward", faddr.String()), // todo: 屏蔽
+		slog.String("server", saddr.String()),
+		slog.Duration("rtt", time.Since(start)),
+	)
+	return gaddr, faddr, nil
+}
+
+func (c *Client) MatchForward(loc bvvd.Location) (gaddr, faddr netip.AddrPort, err error) {
+	start := time.Now()
+	type info struct {
+		message
+		loc    bvvd.Location
+		off    float64
+		retime time.Duration
+	}
+
+	var infos []info
+	if err := c.boardcastPingForward(func(m message) bool {
+		infos = append(infos, info{message: m})
+		return true
+	}, time.Second*3); err != nil && !errorx.Temporary(err) {
+		return netip.AddrPort{}, netip.AddrPort{}, err
+	} else if len(infos) == 0 {
+		return netip.AddrPort{}, netip.AddrPort{}, errors.New("not replay")
+	}
+
+	for i, msg := range infos {
+		coord, err := internal.IPCoord(bvvd.Bvvd(msg.Message).Forward().Addr())
 		if err != nil {
 			return netip.AddrPort{}, netip.AddrPort{}, err
 		}
-		msgIds = append(msgIds, id)
+		loc, off := bvvd.Locations.Match(coord)
+
+		infos[i].loc = loc
+		infos[i].off = off
+		// convert coordinate offset to delay by 30km/ms (usaully is slow speed)
+		infos[i].retime = infos[i].time.Sub(start) + time.Millisecond*time.Duration(off/30)
 	}
 
-	var idx int
-	m, ok := c.msgbuff.PopByDeadline(func(m msg.Message) (pop bool) {
-		idx = slices.Index(msgIds, m.MsgID)
-		return idx >= 0
-	}, time.Now().Add(timeout))
-	if !ok {
-		gates := []string{}
-		for _, e := range c.config.Gateways {
-			gates = append(gates, e.String())
+	slices.SortFunc(infos, func(a, b info) int {
+		if a.retime < b.retime {
+			return -1
+		} else if a.retime > b.retime {
+			return 1
+		} else {
+			return 0
 		}
-		return netip.AddrPort{}, netip.AddrPort{}, errors.Errorf("PingForward location:%s gateways:%s timeout", loc.String(), strings.Join(gates, ","))
+	})
+	if infos[0].loc != loc {
+		c.config.logger.Warn("matched forward not same location", slog.String("infos", fmt.Sprintf("%#v", infos)))
 	}
 
-	return c.config.Gateways[idx], m.Forward, nil
-}
-
-func (c *Client) messageRequest(gaddr netip.AddrPort, msg msg.Message) (msgId uint32, err error) {
-	var pkt = packet.Make(64 + bvvd.Size)
-
-	msg.MsgID = rand.Uint32()
-	if err := msg.Encode(pkt); err != nil {
-		return 0, err
-	}
-
-	if err := c.conn.WriteToAddrPort(pkt, gaddr); err != nil {
-		return 0, c.close(err)
-	}
-	return msg.MsgID, nil
+	gaddr, faddr = infos[0].gaddr, bvvd.Bvvd(infos[0].Message).Forward()
+	c.config.logger.Info("mathch forward",
+		slog.String("gateway", gaddr.String()),
+		slog.String("forward", faddr.String()), // todo: 屏蔽
+		slog.String("location", loc.String()),
+		slog.Duration("rtt", infos[0].time.Sub(start)),
+	)
+	return gaddr, faddr, nil
 }
 
 func (c *Client) NetworkStats(timeout time.Duration) (s *NetworkStates, err error) {
@@ -192,38 +234,48 @@ func (c *Client) NetworkStats(timeout time.Duration) (s *NetworkStates, err erro
 	)
 	gaddr, faddr, _ := c.trunk.Trunk()
 
-	var ids []uint32
-	m := msg.Message{}
+	var pkt = packet.Make(msg.MinSize)
+
+	var m = msg.Fields{MsgID: rand.Uint32()}
 	m.Forward = faddr
+	if err := m.Encode(pkt); err != nil {
+		return nil, err
+	}
+	hdr := bvvd.Bvvd(pkt.Bytes())
+
 	for _, kind := range kinds {
-		m.Kind = kind
-		id, err := c.messageRequest(gaddr, m)
-		if err != nil {
+		hdr.SetKind(kind)
+		if err := c.conn.WriteToAddrPort(pkt, gaddr); err != nil {
 			return nil, c.close(err)
 		}
-		ids = append(ids, id)
 	}
 
 	s = &NetworkStates{}
 	for i := 0; i < len(kinds); i++ {
-		msg, ok := c.msgbuff.PopByDeadline(func(m msg.Message) (pop bool) {
-			return slices.Contains(ids, m.MsgID)
+		msg, ok := c.msgbuff.PopDeadline(func(msg message) (pop bool) {
+			return msg.MsgID() == m.MsgID
 		}, time.Now().Add(time.Second*3))
 		if !ok {
 			err = errorx.WrapTemp(errors.New("timeout"))
 			break
 		}
-		switch msg.Kind {
+		switch msg.Kind() {
 		case bvvd.PingGateway:
 			s.PingGateway = time.Since(start)
 		case bvvd.PingForward:
 			s.PingForward = time.Since(start)
 		case bvvd.PackLossClientUplink:
-			s.PackLossClientUplink = msg.Payload.(stats.PL)
+			if err := msg.Payload(&s.PackLossClientUplink); err != nil {
+				return nil, err
+			}
 		case bvvd.PackLossGatewayUplink:
-			s.PackLossGatewayUplink = msg.Payload.(stats.PL)
+			if err := msg.Payload(&s.PackLossGatewayUplink); err != nil {
+				return nil, err
+			}
 		case bvvd.PackLossGatewayDownlink:
-			s.PackLossGatewayDownlink = msg.Payload.(stats.PL)
+			if err := msg.Payload(&s.PackLossGatewayDownlink); err != nil {
+				return nil, err
+			}
 		default:
 		}
 	}
@@ -233,28 +285,6 @@ func (c *Client) NetworkStats(timeout time.Duration) (s *NetworkStates, err erro
 		s.PackLossClientDownlink = math.SmallestNonzeroFloat64
 	}
 	return s, err
-}
-
-func (c *Client) RouteProbe(saddr netip.Addr) (gaddr, faddr netip.AddrPort, err error) {
-	coord, err := IPCoord(saddr)
-	if err != nil {
-		return netip.AddrPort{}, netip.AddrPort{}, err
-	}
-	loc, offset := bvvd.Locations.Match(coord)
-
-	gaddr, faddr, err = c.routeProbe(loc, time.Second*3)
-	if err != nil {
-		return netip.AddrPort{}, netip.AddrPort{}, err
-	}
-
-	c.config.logger.Info("route probe",
-		slog.Float64("offset", offset),
-		slog.String("server", saddr.String()),
-		slog.String("location", loc.String()),
-		slog.String("gateway", gaddr.String()),
-		slog.String("forward", faddr.String()), // todo: 屏蔽
-	)
-	return gaddr, faddr, nil
 }
 
 func (c *Client) uplinkService() (_ error) {
@@ -322,7 +352,7 @@ func (c *Client) downlinkServic() (_ error) {
 	)
 
 	for {
-		_, err := c.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
+		gaddr, err := c.conn.ReadFromAddrPort(pkt.Sets(64, 0xffff))
 		if err != nil {
 			return c.close(err)
 		} else if pkt.Data() == 0 {
@@ -332,12 +362,14 @@ func (c *Client) downlinkServic() (_ error) {
 		hdr := bvvd.Bvvd(pkt.Bytes())
 
 		if hdr.Kind() != bvvd.Data {
-			var msg = msg.Message{}
-			if err := msg.Decode(pkt); err != nil {
-				c.config.logger.Warn(err.Error(), errorx.Trace(err))
+			if pkt.Data() >= msg.MinSize {
+				c.msgbuff.MustPut(message{
+					Message: msg.Message(hdr),
+					gaddr:   gaddr, time: time.Now(),
+				})
+			} else {
+				c.config.logger.Warn("too small", slog.String("kind", hdr.Kind().String()))
 			}
-
-			c.msgbuff.MustPut(msg)
 			continue
 		}
 
