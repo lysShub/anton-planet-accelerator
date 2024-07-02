@@ -47,6 +47,7 @@ func (c *Client) boardcastPingServer(saddr netip.Addr, fn func(message) bool, ti
 
 	var m = msg.Fields{MsgID: rand.Uint32()}
 	m.Kind = bvvd.PingServer
+	m.Forward = netip.AddrPortFrom(netip.IPv4Unspecified(), 0)
 	m.Server = saddr
 	if err := m.Encode(pkt); err != nil {
 		return err

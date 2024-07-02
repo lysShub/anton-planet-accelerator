@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net"
 	"net/netip"
+	"slices"
 
 	"github.com/lysShub/anton-planet-accelerator/bvvd"
 	"github.com/lysShub/anton-planet-accelerator/conn"
@@ -111,7 +112,7 @@ func (f *Forward) Serve() error {
 		slog.Bool("debug", debug.Debug()),
 	)
 
-	go f.uplinkService()
+	go f.pingService()
 	return f.uplinkService()
 }
 
@@ -142,7 +143,7 @@ func (f *Forward) uplinkService() (err error) {
 			}
 		case bvvd.PingServer:
 			if err := f.pinger.Ping(pinger.Info{
-				Addr: hdr.Server(), Msg: pkt.Bytes(),
+				Addr: hdr.Server(), Gaddr: gaddr, Msg: slices.Clone(pkt.Bytes()),
 			}); err != nil {
 				return f.close(err)
 			}
@@ -222,7 +223,7 @@ func (f *Forward) downlinkService(link *links.Link) (_ error) {
 
 func (f *Forward) pingService() (_ error) {
 	for e := range f.pingCh {
-		err := f.conn.WriteToAddrPort(packet.From(e.Msg), e.Msg.Client())
+		err := f.conn.WriteToAddrPort(packet.From(e.Msg), e.Gaddr)
 		if err != nil {
 			return f.close(err)
 		}

@@ -46,7 +46,8 @@ type Info struct {
 	Addr netip.Addr
 	RTT  time.Duration
 
-	Msg bvvd.Bvvd
+	Gaddr netip.AddrPort
+	Msg   bvvd.Bvvd
 }
 
 func NewPinger(replayChan chan<- Info, log *slog.Logger) (*Pinger, error) {

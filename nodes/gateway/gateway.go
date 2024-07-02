@@ -281,7 +281,7 @@ func (p *Gateway) donwlinkService() (_ error) {
 			if err = p.conn.WriteToAddrPort(pkt, hdr.Client()); err != nil {
 				return p.close(err)
 			}
-		case bvvd.PingForward:
+		case bvvd.PingForward, bvvd.PingServer:
 			if err = p.conn.WriteToAddrPort(pkt, hdr.Client()); err != nil {
 				return p.close(err)
 			}
