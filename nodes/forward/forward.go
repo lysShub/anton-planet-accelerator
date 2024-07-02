@@ -148,7 +148,7 @@ func (f *Forward) uplinkService() (err error) {
 			}
 		case bvvd.PackLossGatewayUplink:
 			pl := f.ps.Gateway(gaddr).UplinkPL()
-			if err := msg.Message(pkt.Bytes()).SetPayload(&pl); err != nil {
+			if err := (*msg.Message)(pkt).SetPayload(&pl); err != nil {
 				f.config.logger.Warn(err.Error(), errorx.Trace(err))
 			}
 

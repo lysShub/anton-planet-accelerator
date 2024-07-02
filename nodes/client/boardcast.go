@@ -31,7 +31,7 @@ func (c *Client) boardcastPingForward(fn func(message) bool, timeout time.Durati
 	}
 
 	_, ok := c.msgbuff.PopDeadline(func(msg message) (pop bool) {
-		if msg.MsgID() == m.MsgID {
+		if msg.msg.MsgID() == m.MsgID {
 			return fn(msg)
 		}
 		return false
@@ -59,7 +59,7 @@ func (c *Client) boardcastPingServer(saddr netip.Addr, fn func(message) bool, ti
 	}
 
 	_, ok := c.msgbuff.PopDeadline(func(msg message) (pop bool) {
-		if msg.MsgID() == m.MsgID {
+		if msg.msg.MsgID() == m.MsgID {
 			return fn(msg)
 		}
 		return false

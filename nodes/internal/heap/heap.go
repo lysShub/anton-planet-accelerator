@@ -116,8 +116,10 @@ func (h *Heap[T]) popByLocked(fn func(T) bool, dead *atomic.Bool) (val T) {
 		} else {
 			panic("impossible")
 		}
+		return val
+	} else {
+		return h.del(i)
 	}
-	return h.del(i)
 }
 
 func (h *Heap[T]) del(i int) T {

@@ -37,7 +37,7 @@ func TestXxxx(t *testing.T) {
 		Location: bvvd.Moscow,
 		Gateways: []netip.AddrPort{
 			netip.MustParseAddrPort("39.106.138.35:19986"), // 北京
-			netip.MustParseAddrPort("8.137.91.200:19986"),  // 成都
+			// netip.MustParseAddrPort("8.137.91.200:19986"),  // 成都
 		},
 	}
 	os.Remove(config.PcapPath)

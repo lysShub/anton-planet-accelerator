@@ -179,13 +179,13 @@ func (p *Gateway) uplinkService() (_ error) {
 			}
 			for _, faddr := range faddrs {
 				hdr.SetForward(faddr)
-				if err = p.conn.WriteToAddrPort(pkt, faddr); err != nil {
+				if err = p.sender.WriteToAddrPort(pkt, faddr); err != nil {
 					return p.close(err)
 				}
 			}
 		case bvvd.PackLossClientUplink:
 			pl := p.cs.Client(caddr).UplinkPL()
-			if err := msg.Message(pkt.Bytes()).SetPayload(&pl); err != nil {
+			if err := (*msg.Message)(pkt).SetPayload(&pl); err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			}
@@ -205,7 +205,7 @@ func (p *Gateway) uplinkService() (_ error) {
 			}
 			pl := f.DownlinkPL()
 
-			if err := msg.Message(pkt.Bytes()).SetPayload(&pl); err != nil {
+			if err := (*msg.Message)(pkt).SetPayload(&pl); err != nil {
 				p.config.logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			}

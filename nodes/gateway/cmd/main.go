@@ -27,8 +27,8 @@ func main() {
 
 	go func() {
 		time.Sleep(time.Second)
-		require.NoError(t, p.AddForward(netip.MustParseAddrPort("45.131.69.50:19986"))) // 莫斯科
-		require.NoError(t, p.AddForward(netip.MustParseAddrPort("45.131.69.50:19986"))) // 洛杉矶
+		require.NoError(t, p.AddForward(netip.MustParseAddrPort("45.131.69.50:19986")))  // 莫斯科
+		require.NoError(t, p.AddForward(netip.MustParseAddrPort("103.94.185.61:19986"))) // 洛杉矶
 
 		for {
 			time.Sleep(time.Second * 3)

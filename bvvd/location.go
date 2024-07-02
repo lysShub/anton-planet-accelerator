@@ -13,7 +13,7 @@ import (
 type Location uint8
 
 func (l Location) Valid() error {
-	if l.valid() {
+	if !l.valid() {
 		return errors.Errorf("invalid location %d", l)
 	}
 	return nil

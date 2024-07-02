@@ -10,24 +10,35 @@ import (
 
 const MinSize = bvvd.Size + 4
 
-type Message []byte
+type Message packet.Packet
 
-func (m Message) Kind() bvvd.Kind { return bvvd.Bvvd(m).Kind() }
-
-func (m Message) MsgID() uint32 {
-	return binary.BigEndian.Uint32(m[bvvd.Size:])
+func (m *Message) Bvvd() bvvd.Bvvd {
+	return bvvd.Bvvd((*packet.Packet)(m).Bytes())
 }
 
-func (m Message) SetMsgID(id uint32) {
-	binary.BigEndian.PutUint32(m[bvvd.Size:], id)
+func (m *Message) Kind() bvvd.Kind {
+	return bvvd.Bvvd((*packet.Packet)(m).Bytes()).Kind()
 }
 
-func (m Message) Payload(to Payload) error {
-	return to.Decode(packet.From(m[MinSize:]))
+func (m *Message) MsgID() uint32 {
+	return binary.BigEndian.Uint32((*packet.Packet)(m).Bytes()[bvvd.Size:])
 }
 
-func (m Message) SetPayload(from Payload) error {
-	return from.Encode(packet.From(m[MinSize:]))
+func (m *Message) SetMsgID(id uint32) {
+	binary.BigEndian.PutUint32((*packet.Packet)(m).Bytes()[bvvd.Size:], id)
+}
+
+func (m *Message) Payload(to Payload) error {
+	(*packet.Packet)(m).DetachN(MinSize)
+	defer (*packet.Packet)(m).AttachN(MinSize)
+	return to.Decode((*packet.Packet)(m))
+}
+
+func (m *Message) SetPayload(from Payload) error {
+	(*packet.Packet)(m).DetachN(MinSize)
+	defer (*packet.Packet)(m).AttachN(MinSize)
+
+	return from.Encode((*packet.Packet)(m))
 }
 
 type Fields struct {

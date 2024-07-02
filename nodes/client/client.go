@@ -55,7 +55,7 @@ type Client struct {
 }
 
 type message struct {
-	msg.Message
+	msg   *msg.Message
 	gaddr netip.AddrPort
 	time  time.Time
 }
@@ -125,7 +125,7 @@ func (c *Client) start() error {
 	var gaddr, faddr netip.AddrPort
 	if err := c.boardcastPingForward(func(m message) bool {
 		gaddr = m.gaddr
-		faddr = bvvd.Bvvd(m.Message).Forward()
+		faddr = m.msg.Bvvd().Forward()
 		return true
 	}, time.Second*3); err != nil {
 		return err
@@ -153,7 +153,7 @@ func (c *Client) RouteProbe(saddr netip.Addr) (gaddr, faddr netip.AddrPort, err 
 
 	if err := c.boardcastPingServer(saddr, func(msg message) (pop bool) {
 		gaddr = msg.gaddr
-		faddr = bvvd.Bvvd(msg.Message).Forward()
+		faddr = msg.msg.Bvvd().Forward()
 		return true
 	}, time.Second*3); err != nil {
 		return netip.AddrPort{}, netip.AddrPort{}, err
@@ -188,7 +188,7 @@ func (c *Client) MatchForward(loc bvvd.Location) (gaddr, faddr netip.AddrPort, e
 	}
 
 	for i, msg := range infos {
-		coord, err := internal.IPCoord(bvvd.Bvvd(msg.Message).Forward().Addr())
+		coord, err := internal.IPCoord(msg.msg.Bvvd().Forward().Addr())
 		if err != nil {
 			return netip.AddrPort{}, netip.AddrPort{}, err
 		}
@@ -213,7 +213,7 @@ func (c *Client) MatchForward(loc bvvd.Location) (gaddr, faddr netip.AddrPort, e
 		c.config.logger.Warn("matched forward not same location", slog.String("infos", fmt.Sprintf("%#v", infos)))
 	}
 
-	gaddr, faddr = infos[0].gaddr, bvvd.Bvvd(infos[0].Message).Forward()
+	gaddr, faddr = infos[0].gaddr, infos[0].msg.Bvvd().Forward()
 	c.config.logger.Info("mathch forward",
 		slog.String("gateway", gaddr.String()),
 		slog.String("forward", faddr.String()), // todo: 屏蔽
@@ -237,6 +237,7 @@ func (c *Client) NetworkStats(timeout time.Duration) (s *NetworkStates, err erro
 	var pkt = packet.Make(msg.MinSize)
 
 	var m = msg.Fields{MsgID: rand.Uint32()}
+	m.Kind = kinds[0]
 	m.Forward = faddr
 	if err := m.Encode(pkt); err != nil {
 		return nil, err
@@ -253,27 +254,27 @@ func (c *Client) NetworkStats(timeout time.Duration) (s *NetworkStates, err erro
 	s = &NetworkStates{}
 	for i := 0; i < len(kinds); i++ {
 		msg, ok := c.msgbuff.PopDeadline(func(msg message) (pop bool) {
-			return msg.MsgID() == m.MsgID
+			return msg.msg.MsgID() == m.MsgID
 		}, time.Now().Add(time.Second*3))
 		if !ok {
 			err = errorx.WrapTemp(errors.New("timeout"))
 			break
 		}
-		switch msg.Kind() {
+		switch msg.msg.Kind() {
 		case bvvd.PingGateway:
 			s.PingGateway = time.Since(start)
 		case bvvd.PingForward:
 			s.PingForward = time.Since(start)
 		case bvvd.PackLossClientUplink:
-			if err := msg.Payload(&s.PackLossClientUplink); err != nil {
+			if err := msg.msg.Payload(&s.PackLossClientUplink); err != nil {
 				return nil, err
 			}
 		case bvvd.PackLossGatewayUplink:
-			if err := msg.Payload(&s.PackLossGatewayUplink); err != nil {
+			if err := msg.msg.Payload(&s.PackLossGatewayUplink); err != nil {
 				return nil, err
 			}
 		case bvvd.PackLossGatewayDownlink:
-			if err := msg.Payload(&s.PackLossGatewayDownlink); err != nil {
+			if err := msg.msg.Payload(&s.PackLossGatewayDownlink); err != nil {
 				return nil, err
 			}
 		default:
@@ -364,8 +365,8 @@ func (c *Client) downlinkServic() (_ error) {
 		if hdr.Kind() != bvvd.Data {
 			if pkt.Data() >= msg.MinSize {
 				c.msgbuff.MustPut(message{
-					Message: msg.Message(hdr),
-					gaddr:   gaddr, time: time.Now(),
+					msg:   (*msg.Message)(packet.From(pkt.Bytes())),
+					gaddr: gaddr, time: time.Now(),
 				})
 			} else {
 				c.config.logger.Warn("too small", slog.String("kind", hdr.Kind().String()))
