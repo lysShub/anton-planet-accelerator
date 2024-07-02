@@ -79,6 +79,7 @@ func New(addr string, config *Config) (*Forward, error) {
 	if off > 500 {
 		return nil, f.close(errors.Errorf("%s offset location %s  %fkm too large", public, loc, off))
 	}
+	f.loc = loc
 
 	return f, nil
 }

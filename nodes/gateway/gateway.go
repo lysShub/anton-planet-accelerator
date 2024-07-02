@@ -99,9 +99,18 @@ func (p *Gateway) Serve() (err error) {
 	return p.close(p.uplinkService())
 }
 
-func (p *Gateway) AddForward(faddr netip.AddrPort, loc bvvd.Location) error {
+func (p *Gateway) AddForward(faddr netip.AddrPort) error {
 	if !p.start.Load() {
 		return errors.Errorf("gateway not start")
+	}
+
+	coord, err := internal.IPCoord(faddr.Addr())
+	if err != nil {
+		return err
+	}
+	loc, offset := bvvd.Locations.Match(coord)
+	if offset > 500 {
+		return errors.Errorf("forward %s offset location %s %fkm", faddr.Addr(), loc, offset)
 	}
 
 	if err := p.fs.Add(faddr, loc); err != nil {
